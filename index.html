@@ -49,13 +49,29 @@
             return <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}></i>;
         };
 
-        // --- NOUVEAU COMPOSANT NEURAL GLOW (VOTRE VERSION) ---
-        const NeuralGlow = () => {
+        // --- COMPOSANT NEURAL GLOW ---
+        const NeuralGlow = ({ color, mouseTracking }) => {
             const canvasRef = useRef(null);
             const animationRef = useRef(null);
             const glRef = useRef(null);
             const uniformsRef = useRef(null);
             const pointerRef = useRef({ x: 0, y: 0, tX: 0, tY: 0 });
+            
+            // Utilisation d'une ref pour la couleur afin que la boucle d'animation accède toujours à la valeur la plus récente
+            const colorRef = useRef(color);
+            useEffect(() => {
+                colorRef.current = color;
+            }, [color]);
+
+            // Conversion Hex à RGB normalisé (0-1)
+            const hexToRgb = (hex) => {
+                const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                return result ? [
+                    parseInt(result[1], 16) / 255,
+                    parseInt(result[2], 16) / 255,
+                    parseInt(result[3], 16) / 255
+                ] : [0.1, 0.2, 0.8];
+            };
 
             const vertexShaderSource = `
                 precision mediump float;
@@ -74,6 +90,7 @@
                 uniform float u_ratio;
                 uniform vec2 u_pointer_position;
                 uniform float u_scroll_progress;
+                uniform vec3 u_base_color;
 
                 vec2 rotate(vec2 uv, float th) {
                     return mat2(cos(th), sin(th), -sin(th), cos(th)) * uv;
@@ -107,8 +124,10 @@
                     noise += pow(noise, 10.);
                     noise = max(.0, noise - .5);
                     noise *= (1. - length(vUv - .5));
-                    vec3 color = vec3(0.1, 0.2, 0.8);
-                    color += vec3(0.0, 0.1, 0.4) * sin(3.0 * u_scroll_progress + 1.5);
+                    
+                    vec3 color = u_base_color;
+                    color += (u_base_color * 0.5) * sin(3.0 * u_scroll_progress + 1.5);
+                    
                     color = color * noise;
                     gl_FragColor = vec4(color, noise);
                 }
@@ -119,7 +138,6 @@
                 gl.shaderSource(shader, sourceCode);
                 gl.compileShader(shader);
                 if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-                    console.error('Shader compile error: ' + gl.getShaderInfoLog(shader));
                     gl.deleteShader(shader);
                     return null;
                 }
@@ -131,10 +149,7 @@
                 gl.attachShader(program, vertexShader);
                 gl.attachShader(program, fragmentShader);
                 gl.linkProgram(program);
-                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-                    console.error('Program link error: ' + gl.getProgramInfoLog(program));
-                    return null;
-                }
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null;
                 return program;
             };
 
@@ -184,8 +199,20 @@
                 const pointer = pointerRef.current;
                 if (!gl || !uniforms) return;
                 const time = performance.now();
-                pointer.x += (pointer.tX - pointer.x) * 0.2;
-                pointer.y += (pointer.tY - pointer.y) * 0.2;
+                
+                // Mettre à jour la position du curseur seulement si le tracking est activé
+                if (mouseTracking) {
+                    pointer.x += (pointer.tX - pointer.x) * 0.2;
+                    pointer.y += (pointer.tY - pointer.y) * 0.2;
+                } else {
+                    pointer.x += (window.innerWidth/2 - pointer.x) * 0.05;
+                    pointer.y += (window.innerHeight/2 - pointer.y) * 0.05;
+                }
+
+                // Couleur dynamique via la ref
+                const rgb = hexToRgb(colorRef.current);
+                gl.uniform3f(uniforms.u_base_color, rgb[0], rgb[1], rgb[2]);
+
                 gl.uniform1f(uniforms.u_time, time);
                 gl.uniform2f(uniforms.u_pointer_position, pointer.x / window.innerWidth, 1 - pointer.y / window.innerHeight);
                 gl.uniform1f(uniforms.u_scroll_progress, window.pageYOffset / (2 * window.innerHeight));
@@ -198,11 +225,15 @@
                 resizeCanvas();
                 render();
 
-                const updatePos = (x, y) => { pointerRef.current.tX = x; pointerRef.current.tY = y; };
+                const updatePos = (x, y) => { 
+                    pointerRef.current.tX = x; 
+                    pointerRef.current.tY = y; 
+                };
+                
                 const hResize = () => resizeCanvas();
-                const hMove = (e) => updatePos(e.clientX, e.clientY);
-                const hTouch = (e) => updatePos(e.touches[0].clientX, e.touches[0].clientY);
-                const hClick = (e) => updatePos(e.clientX, e.clientY);
+                const hMove = (e) => { if (mouseTracking) updatePos(e.clientX, e.clientY); };
+                const hTouch = (e) => { if (mouseTracking) updatePos(e.touches[0].clientX, e.touches[0].clientY); };
+                const hClick = (e) => { if (mouseTracking) updatePos(e.clientX, e.clientY); };
 
                 window.addEventListener('resize', hResize);
                 window.addEventListener('pointermove', hMove);
@@ -216,9 +247,9 @@
                     window.removeEventListener('touchmove', hTouch);
                     window.removeEventListener('click', hClick);
                 };
-            }, []);
+            }, [mouseTracking]);
 
-            return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none opacity-95 z-0" style={{ backgroundColor: '#000000' }} />;
+            return <canvas ref={canvasRef} className="fixed inset-0 w-full h-full pointer-events-none opacity-100 z-0" style={{ backgroundColor: '#000000' }} />;
         };
 
         // --- COMPOSANT APPLICATION ---
@@ -231,6 +262,12 @@
             const [isDarkMode, setIsDarkMode] = useState(true);
             const [isRecording, setIsRecording] = useState(false);
             
+            // Paramètres (Configuration dynamique)
+            const [isConfigOpen, setIsConfigOpen] = useState(false);
+            const [config, setConfig] = useState(DEFAULT_CONFIG);
+            const [glowColor, setGlowColor] = useState("#6366f1");
+            const [enableMouseTracking, setEnableMouseTracking] = useState(true);
+
             const recognitionRef = useRef(null);
             const fileInputRef = useRef(null);
 
@@ -291,10 +328,13 @@
             };
 
             return (
-                <div className={`flex h-full transition-colors duration-500 ${isDarkMode ? 'bg-[#000] text-white' : 'bg-white text-gray-900'}`}>
+                <div className={`flex h-full transition-colors duration-500 relative ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                    
+                    {/* FOND ANIMÉ GLOBAL */}
+                    <NeuralGlow color={glowColor} mouseTracking={enableMouseTracking} />
                     
                     {/* Sidebar */}
-                    <aside className={`${isSidebarOpen ? 'w-64' : 'w-0'} bg-[#050505] border-r border-white/5 flex flex-col transition-all duration-300 overflow-hidden z-40`}>
+                    <aside className={`${isSidebarOpen ? 'w-64' : 'w-0'} bg-[#050505]/80 backdrop-blur-xl border-r border-white/5 flex flex-col transition-all duration-300 overflow-hidden z-40`}>
                         <div className="p-4 flex items-center justify-between min-w-[250px]">
                             <button onClick={() => {
                                 const id = Date.now();
@@ -314,21 +354,26 @@
                                 </div>
                             ))}
                         </div>
+                        {/* Bouton Paramètres */}
+                        <div className="p-4 border-t border-white/5">
+                            <button onClick={() => setIsConfigOpen(true)} className="flex items-center gap-2 w-full p-2 hover:bg-white/5 rounded-lg text-sm opacity-60 hover:opacity-100 transition-opacity">
+                                <Icon name="settings" size={16} /> Paramètres
+                            </button>
+                        </div>
                     </aside>
 
                     {/* Main Area */}
-                    <main className="flex-1 flex flex-col relative min-w-0 bg-transparent">
+                    <main className="flex-1 flex flex-col relative min-w-0 bg-transparent z-10">
                         <header className="absolute top-0 w-full p-4 flex items-center justify-between z-30">
                             <div className="flex items-center gap-4">
                                 {!isSidebarOpen && <button onClick={() => setIsSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg backdrop-blur-md"><Icon name="panel-left" /></button>}
-                                <h1 className="font-bold text-xl tracking-tight drop-shadow-lg">Nexus AI</h1>
+                                <h1 className="font-bold text-xl tracking-tight drop-shadow-lg">{config.companyName}</h1>
                             </div>
                         </header>
 
                         <div className="flex-1 overflow-y-auto custom-scrollbar relative">
                             {isHome ? (
                                 <div className="h-full flex flex-col items-center justify-center p-6 text-center">
-                                    <NeuralGlow />
                                     <div className="relative z-10 space-y-8 animate-fadeIn w-full max-w-2xl px-4">
                                         <div className="inline-flex p-4 rounded-3xl bg-indigo-500/10 border border-indigo-500/20 shadow-2xl backdrop-blur-md mb-4">
                                             <Icon name="sparkles" size={40} className="text-indigo-400" />
@@ -356,7 +401,6 @@
                                 </div>
                             ) : (
                                 <div className="max-w-3xl mx-auto py-24 px-4 space-y-10 relative z-10">
-                                    <NeuralGlow />
                                     {activeSession.messages.map(m => (
                                         <div key={m.id} className={`flex gap-5 animate-fadeIn relative z-20 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
                                             <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-lg ${m.role === 'user' ? 'bg-zinc-700' : (m.isError ? 'bg-red-500' : 'bg-indigo-600')}`}>
@@ -391,6 +435,63 @@
                             </footer>
                         )}
                     </main>
+
+                    {/* MODAL PARAMÈTRES */}
+                    {isConfigOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setIsConfigOpen(false)}>
+                            <div className="bg-[#121212] border border-white/10 p-6 rounded-2xl w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="text-lg font-bold">Paramètres</h3>
+                                    <button onClick={() => setIsConfigOpen(false)}><Icon name="x" size={20} className="opacity-60 hover:opacity-100" /></button>
+                                </div>
+                                
+                                <div className="space-y-6">
+                                    {/* Option Nom Entreprise */}
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2 opacity-80">Nom de l'interface</label>
+                                        <input 
+                                            type="text" 
+                                            value={config.companyName}
+                                            onChange={(e) => setConfig({...config, companyName: e.target.value})}
+                                            className="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-sm focus:border-indigo-500 outline-none"
+                                        />
+                                    </div>
+
+                                    {/* Option Couleur */}
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2 opacity-80">Couleur du fond</label>
+                                        <div className="flex items-center gap-3">
+                                            <input 
+                                                type="color" 
+                                                value={glowColor}
+                                                onChange={(e) => setGlowColor(e.target.value)}
+                                                className="w-10 h-10 rounded-lg cursor-pointer bg-transparent border border-white/20"
+                                            />
+                                            <span className="text-sm opacity-60 font-mono">{glowColor}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Option Suivi Souris */}
+                                    <div>
+                                        <label className="flex items-center justify-between cursor-pointer">
+                                            <span className="text-sm font-medium opacity-80">Suivi de la souris</span>
+                                            <div 
+                                                className={`w-12 h-6 rounded-full p-1 transition-colors ${enableMouseTracking ? 'bg-indigo-600' : 'bg-zinc-700'}`}
+                                                onClick={() => setEnableMouseTracking(!enableMouseTracking)}
+                                            >
+                                                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${enableMouseTracking ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <button onClick={() => setIsConfigOpen(false)} className="w-full mt-8 py-3 bg-white text-black rounded-xl font-bold hover:bg-zinc-200 transition-colors">
+                                    Fermer
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                 </div>
             );
         };
