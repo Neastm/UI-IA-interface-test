@@ -1,541 +1,1134 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nexus AI - Interface</title>
-    
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    
-    <style>
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes pulseOpacity { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.7; } }
-        
-        .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
-        .animate-pulse-soft { animation: pulseOpacity 2s infinite ease-in-out; }
-        
-        body, html, #root { height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #000; }
-        
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nexus AI - Interface</title>
 
-        .prose { color: #e5e7eb; font-size: 0.95rem; line-height: 1.6; }
-        .prose strong { color: #fff; }
-        .prose h1, .prose h2 { color: #fff; margin-top: 1em; margin-bottom: 0.5em; font-weight: 700; }
-        .prose code { background: rgba(255,255,255,0.1); padding: 0.2em 0.4em; border-radius: 0.3em; }
-        .prose pre { background: rgba(0,0,0,0.3); padding: 1em; border-radius: 0.5em; overflow-x: auto; }
-        
-        .ai-thought {
-            font-style: italic;
-            opacity: 0.6;
-            font-size: 0.85rem;
-            border-left: 2px solid rgba(255,255,255,0.2);
-            padding-left: 1rem;
-            margin-bottom: 1rem;
-            color: #9ca3af;
-        }
-    </style>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <style>
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pulseOpacity { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.7; } }
+
+    .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
+    .animate-pulse-soft { animation: pulseOpacity 2s infinite ease-in-out; }
+
+    body, html, #root { height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #000; }
+
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+
+    .prose { color: #e5e7eb; font-size: 0.95rem; line-height: 1.6; }
+    .prose strong { color: #fff; }
+    .prose h1, .prose h2 { color: #fff; margin-top: 1em; margin-bottom: 0.5em; font-weight: 700; }
+    .prose code { background: rgba(255,255,255,0.1); padding: 0.2em 0.4em; border-radius: 0.3em; }
+    .prose pre { background: rgba(0,0,0,0.3); padding: 1em; border-radius: 0.5em; overflow-x: auto; }
+
+    .ai-thought {
+      font-style: italic;
+      opacity: 0.6;
+      font-size: 0.85rem;
+      border-left: 2px solid rgba(255,255,255,0.2);
+      padding-left: 1rem;
+      margin-bottom: 1rem;
+      color: #9ca3af;
+    }
+  </style>
 </head>
+
 <body>
-    <div id="root"></div>
+  <div id="root"></div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+  <script type="text/babel">
+    const { useEffect, useMemo, useRef, useState } = React;
 
-        const N8N_TEXT_WEBHOOK = "https://esmieunathan.app.n8n.cloud/webhook/e19ae4b2-a192-4512-9e5f-b03d0580be78"; 
-        
-        const THOUGHT_STEPS = [
-            "Analyse de la demande",
-            "Consultation de la base de données",
-            "Traitement des informations",
-            "Synthèse des résultats",
-            "Finalisation de la réponse"
-        ];
+    /*************************
+     * CONFIG / CONSTANTES
+     *************************/
+    const N8N_TEXT_WEBHOOK =
+      "https://esmieunathan.app.n8n.cloud/webhook/e19ae4b2-a192-4512-9e5f-b03d0580be78";
 
-        const DEFAULT_CONFIG = {
-            companyName: "Nexus AI",
-            primaryColor: "#6366f1",
+    // ✅ Nouveau webhook demandé pour l'upload SIDEBAR (et utilisé aussi pour les fichiers en conversation)
+    const N8N_FILE_WEBHOOK =
+      "https://esmieunathan.app.n8n.cloud/webhook/2131cbf7-62e1-4e92-86a7-69a51cd1ad3b";
+
+    const THOUGHT_STEPS = [
+      "Analyse de la demande",
+      "Consultation de la base de données",
+      "Traitement des informations",
+      "Synthèse des résultats",
+      "Finalisation de la réponse"
+    ];
+
+    const DEFAULT_CONFIG = {
+      companyName: "Nexus AI",
+      primaryColor: "#6366f1",
+    };
+
+    /*************************
+     * UTILS
+     *************************/
+    const uid = () => {
+      try { return crypto.randomUUID(); }
+      catch { return String(Date.now() + Math.random()); }
+    };
+
+    const safeJsonParse = (text) => {
+      try { return JSON.parse(text); } catch { return text; }
+    };
+
+    const normalizeWebhookResponseToText = (data) => {
+      if (data == null) return "Réponse vide.";
+      if (typeof data === "string") return data;
+
+      if (Array.isArray(data) && data.length > 0) {
+        const first = data[0];
+        if (typeof first === "string") return first;
+        if (first && typeof first === "object") {
+          return (
+            first.output ||
+            first.reply ||
+            first.data ||
+            first.text ||
+            Object.values(first)[0] ||
+            JSON.stringify(first)
+          );
+        }
+        return JSON.stringify(first);
+      }
+
+      if (typeof data === "object") {
+        return (
+          data.output ||
+          data.reply ||
+          data.data ||
+          data.text ||
+          Object.values(data)[0] ||
+          JSON.stringify(data)
+        );
+      }
+
+      return String(data);
+    };
+
+    const fetchWebhook = async (url, options) => {
+      const res = await fetch(url, options);
+      const raw = await res.text();
+      const parsed = safeJsonParse(raw);
+      return { ok: res.ok, status: res.status, data: parsed };
+    };
+
+    const sendFileToWebhook = async ({ file, sessionId, source, chatHistory }) => {
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+      fd.append("fileName", file.name);
+      fd.append("mimeType", file.type || "");
+      fd.append("sessionId", String(sessionId));
+      fd.append("source", source); // "sidebar" | "chat"
+      if (chatHistory) fd.append("chatHistory", JSON.stringify(chatHistory));
+
+      const { ok, status, data } = await fetchWebhook(N8N_FILE_WEBHOOK, {
+        method: "POST",
+        body: fd
+      });
+
+      if (!ok) {
+        const msg = typeof data === "string" ? data : JSON.stringify(data);
+        throw new Error(`Upload refusé (${status}) : ${msg}`);
+      }
+
+      return normalizeWebhookResponseToText(data);
+    };
+
+    const useMediaQuery = (query) => {
+      const get = () => {
+        if (!window.matchMedia) return false;
+        return window.matchMedia(query).matches;
+      };
+      const [matches, setMatches] = useState(get);
+
+      useEffect(() => {
+        if (!window.matchMedia) return;
+        const mql = window.matchMedia(query);
+        const onChange = (e) => setMatches(e.matches);
+        if (mql.addEventListener) mql.addEventListener("change", onChange);
+        else mql.addListener(onChange);
+        return () => {
+          if (mql.removeEventListener) mql.removeEventListener("change", onChange);
+          else mql.removeListener(onChange);
+        };
+      }, [query]);
+
+      return matches;
+    };
+
+    /*************************
+     * UI COMPONENTS
+     *************************/
+    const Icon = ({ name, size = 20, className = "" }) => {
+      useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name]);
+      return (
+        <i
+          data-lucide={name}
+          className={className}
+          style={{
+            width: size,
+            height: size,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        />
+      );
+    };
+
+    const MessageContent = ({ content }) => {
+      const thinkingMatch = content?.match?.(/<thinking>([\s\S]*?)<\/thinking>/);
+      const thinking = thinkingMatch ? thinkingMatch[1] : null;
+      const mainContent = (content || "")
+        .replace(/<thinking>[\s\S]*?<\/thinking>/, "")
+        .trim();
+
+      return (
+        <div className="prose">
+          {thinking && (
+            <div className="ai-thought flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest font-bold opacity-50 flex items-center gap-2">
+                <Icon name="brain" size={10} /> Réflexion
+              </span>
+              <div dangerouslySetInnerHTML={{ __html: marked.parse(thinking) }} />
+            </div>
+          )}
+          <div dangerouslySetInnerHTML={{ __html: marked.parse(mainContent) }} />
+        </div>
+      );
+    };
+
+    const FileBubble = ({ m }) => {
+      const isImage = (m.mimeType || "").startsWith("image/");
+      return (
+        <div className="flex flex-col gap-3">
+          {isImage && m.previewUrl && (
+            <img
+              src={m.previewUrl}
+              alt={m.fileName}
+              className="w-full max-w-[420px] rounded-2xl border border-white/10 shadow-lg"
+            />
+          )}
+
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 rounded-xl bg-white/5 border border-white/10 shrink-0">
+              <Icon name={isImage ? "image" : "file-text"} size={18} className="opacity-80" />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium truncate">{m.fileName}</div>
+              <div className="text-xs opacity-60 flex items-center gap-2">
+                {m.status === "uploading" && (
+                  <>
+                    <Icon name="loader-2" size={14} className="animate-spin" />
+                    <span>Envoi en attente de validation…</span>
+                  </>
+                )}
+                {m.status === "sent" && (
+                  <>
+                    <Icon name="check-circle-2" size={14} />
+                    <span>Envoyé</span>
+                  </>
+                )}
+                {m.status === "error" && (
+                  <>
+                    <Icon name="x-circle" size={14} />
+                    <span>Échec</span>
+                  </>
+                )}
+              </div>
+              {m.error && m.status === "error" && (
+                <div className="text-xs text-red-400 mt-1 break-words">{m.error}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    /*************************
+     * NEURAL GLOW (corrigé)
+     * - boucle RAF robuste (ne dépend plus de re-renders)
+     * - mouseTracking + couleur via refs
+     *************************/
+    const NeuralGlow = ({ color, mouseTracking }) => {
+      const canvasRef = useRef(null);
+
+      const glRef = useRef(null);
+      const programRef = useRef(null);
+      const uniformsRef = useRef(null);
+      const rafRef = useRef(null);
+
+      const pointerRef = useRef({ x: 0, y: 0, tX: 0, tY: 0 });
+      const colorRef = useRef(color);
+      const mouseTrackingRef = useRef(mouseTracking);
+
+      useEffect(() => { colorRef.current = color; }, [color]);
+      useEffect(() => { mouseTrackingRef.current = mouseTracking; }, [mouseTracking]);
+
+      const hexToRgb = (hex) => {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result
+          ? [parseInt(result[1], 16) / 255, parseInt(result[2], 16) / 255, parseInt(result[3], 16) / 255]
+          : [0.1, 0.2, 0.8];
+      };
+
+      const vertexShaderSource = `
+        precision mediump float;
+        varying vec2 vUv;
+        attribute vec2 a_position;
+        void main() {
+          vUv = .5 * (a_position + 1.);
+          gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+      `;
+
+      const fragmentShaderSource = `
+        precision mediump float;
+        varying vec2 vUv;
+        uniform float u_time;
+        uniform float u_ratio;
+        uniform vec2 u_pointer_position;
+        uniform float u_scroll_progress;
+        uniform vec3 u_base_color;
+
+        vec2 rotate(vec2 uv, float th) {
+          return mat2(cos(th), sin(th), -sin(th), cos(th)) * uv;
+        }
+
+        float neuro_shape(vec2 uv, float t, float p) {
+          vec2 sine_acc = vec2(0.);
+          vec2 res = vec2(0.);
+          float scale = 8.;
+          for (int j = 0; j < 15; j++) {
+            uv = rotate(uv, 1.);
+            sine_acc = rotate(sine_acc, 1.);
+            vec2 layer = uv * scale + float(j) + sine_acc - t;
+            sine_acc += sin(layer) + 2.4 * p;
+            res += (.5 + .5 * cos(layer)) / scale;
+            scale *= (1.2);
+          }
+          return res.x + res.y;
+        }
+
+        void main() {
+          vec2 uv = .5 * vUv;
+          uv.x *= u_ratio;
+          vec2 pointer = vUv - u_pointer_position;
+          pointer.x *= u_ratio;
+          float p = clamp(length(pointer), 0., 1.);
+          p = .5 * pow(1. - p, 2.);
+          float t = .001 * u_time;
+          float noise = neuro_shape(uv, t, p);
+          noise = 1.2 * pow(noise, 3.);
+          noise += pow(noise, 10.);
+          noise = max(.0, noise - .5);
+          noise *= (1. - length(vUv - .5));
+          vec3 color = u_base_color;
+          color += (u_base_color * 0.5) * sin(3.0 * u_scroll_progress + 1.5);
+          gl_FragColor = vec4(color * noise, noise);
+        }
+      `;
+
+      const initGL = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+        if (!gl) return;
+
+        glRef.current = gl;
+
+        const createShader = (type, src) => {
+          const s = gl.createShader(type);
+          gl.shaderSource(s, src);
+          gl.compileShader(s);
+          return s;
         };
 
-        const Icon = ({ name, size = 20, className = "" }) => {
-            useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name]);
-            return <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}></i>;
+        const program = gl.createProgram();
+        gl.attachShader(program, createShader(gl.VERTEX_SHADER, vertexShaderSource));
+        gl.attachShader(program, createShader(gl.FRAGMENT_SHADER, fragmentShaderSource));
+        gl.linkProgram(program);
+        gl.useProgram(program);
+
+        programRef.current = program;
+
+        const uniforms = {};
+        const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
+        for (let i = 0; i < count; i++) {
+          const info = gl.getActiveUniform(program, i);
+          uniforms[info.name] = gl.getUniformLocation(program, info.name);
+        }
+        uniformsRef.current = uniforms;
+
+        const vertices = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+        const buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+        const posLoc = gl.getAttribLocation(program, "a_position");
+        gl.enableVertexAttribArray(posLoc);
+        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+        const resize = () => {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          canvas.width = window.innerWidth * dpr;
+          canvas.height = window.innerHeight * dpr;
+          gl.viewport(0, 0, canvas.width, canvas.height);
+          gl.uniform1f(uniforms.u_ratio, canvas.width / canvas.height);
         };
 
-        const NeuralGlow = ({ color, mouseTracking }) => {
-            const canvasRef = useRef(null);
-            const animationRef = useRef(null);
-            const glRef = useRef(null);
-            const uniformsRef = useRef(null);
-            const pointerRef = useRef({ x: 0, y: 0, tX: 0, tY: 0 });
-            const colorRef = useRef(color);
+        resize();
+        window.addEventListener("resize", resize);
 
-            useEffect(() => { colorRef.current = color; }, [color]);
+        const render = () => {
+          const gl = glRef.current;
+          const uniforms = uniformsRef.current;
+          if (!gl || !uniforms) return;
 
-            const hexToRgb = (hex) => {
-                const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-                return result ? [parseInt(result[1], 16)/255, parseInt(result[2], 16)/255, parseInt(result[3], 16)/255] : [0.1, 0.2, 0.8];
-            };
+          const t = performance.now();
 
-            const vertexShaderSource = `
-                precision mediump float;
-                varying vec2 vUv;
-                attribute vec2 a_position;
-                void main() {
-                    vUv = .5 * (a_position + 1.);
-                    gl_Position = vec4(a_position, 0.0, 1.0);
-                }
-            `;
+          if (mouseTrackingRef.current) {
+            pointerRef.current.x += (pointerRef.current.tX - pointerRef.current.x) * 0.2;
+            pointerRef.current.y += (pointerRef.current.tY - pointerRef.current.y) * 0.2;
+          } else {
+            pointerRef.current.x += (window.innerWidth / 2 - pointerRef.current.x) * 0.05;
+            pointerRef.current.y += (window.innerHeight / 2 - pointerRef.current.y) * 0.05;
+          }
 
-            const fragmentShaderSource = `
-                precision mediump float;
-                varying vec2 vUv;
-                uniform float u_time;
-                uniform float u_ratio;
-                uniform vec2 u_pointer_position;
-                uniform float u_scroll_progress;
-                uniform vec3 u_base_color;
+          const rgb = hexToRgb(colorRef.current);
+          gl.uniform3f(uniforms.u_base_color, rgb[0], rgb[1], rgb[2]);
+          gl.uniform1f(uniforms.u_time, t);
+          gl.uniform2f(
+            uniforms.u_pointer_position,
+            pointerRef.current.x / window.innerWidth,
+            1 - pointerRef.current.y / window.innerHeight
+          );
+          gl.uniform1f(uniforms.u_scroll_progress, window.pageYOffset / (2 * window.innerHeight));
 
-                vec2 rotate(vec2 uv, float th) {
-                    return mat2(cos(th), sin(th), -sin(th), cos(th)) * uv;
-                }
-
-                float neuro_shape(vec2 uv, float t, float p) {
-                    vec2 sine_acc = vec2(0.);
-                    vec2 res = vec2(0.);
-                    float scale = 8.;
-                    for (int j = 0; j < 15; j++) {
-                        uv = rotate(uv, 1.);
-                        sine_acc = rotate(sine_acc, 1.);
-                        vec2 layer = uv * scale + float(j) + sine_acc - t;
-                        sine_acc += sin(layer) + 2.4 * p;
-                        res += (.5 + .5 * cos(layer)) / scale;
-                        scale *= (1.2);
-                    }
-                    return res.x + res.y;
-                }
-
-                void main() {
-                    vec2 uv = .5 * vUv;
-                    uv.x *= u_ratio;
-                    vec2 pointer = vUv - u_pointer_position;
-                    pointer.x *= u_ratio;
-                    float p = clamp(length(pointer), 0., 1.);
-                    p = .5 * pow(1. - p, 2.);
-                    float t = .001 * u_time;
-                    float noise = neuro_shape(uv, t, p);
-                    noise = 1.2 * pow(noise, 3.);
-                    noise += pow(noise, 10.);
-                    noise = max(.0, noise - .5);
-                    noise *= (1. - length(vUv - .5));
-                    vec3 color = u_base_color;
-                    color += (u_base_color * 0.5) * sin(3.0 * u_scroll_progress + 1.5);
-                    gl_FragColor = vec4(color * noise, noise);
-                }
-            `;
-
-            useEffect(() => {
-                const canvas = canvasRef.current;
-                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-                if (!gl) return;
-                glRef.current = gl;
-
-                const createShader = (type, src) => {
-                    const s = gl.createShader(type);
-                    gl.shaderSource(s, src);
-                    gl.compileShader(s);
-                    return s;
-                };
-
-                const program = gl.createProgram();
-                gl.attachShader(program, createShader(gl.VERTEX_SHADER, vertexShaderSource));
-                gl.attachShader(program, createShader(gl.FRAGMENT_SHADER, fragmentShaderSource));
-                gl.linkProgram(program);
-                gl.useProgram(program);
-
-                const uniforms = {};
-                const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
-                for (let i = 0; i < count; i++) {
-                    const info = gl.getActiveUniform(program, i);
-                    uniforms[info.name] = gl.getUniformLocation(program, info.name);
-                }
-                uniformsRef.current = uniforms;
-
-                const vertices = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
-                const buffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-                gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-                const posLoc = gl.getAttribLocation(program, 'a_position');
-                gl.enableVertexAttribArray(posLoc);
-                gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-
-                const resize = () => {
-                    const dpr = Math.min(window.devicePixelRatio, 2);
-                    canvas.width = window.innerWidth * dpr;
-                    canvas.height = window.innerHeight * dpr;
-                    gl.viewport(0, 0, canvas.width, canvas.height);
-                    gl.uniform1f(uniforms.u_ratio, canvas.width / canvas.height);
-                };
-                window.addEventListener('resize', resize);
-                resize();
-
-                const render = () => {
-                    const t = performance.now();
-                    if (mouseTracking) {
-                        pointerRef.current.x += (pointerRef.current.tX - pointerRef.current.x) * 0.2;
-                        pointerRef.current.y += (pointerRef.current.tY - pointerRef.current.y) * 0.2;
-                    } else {
-                        pointerRef.current.x += (window.innerWidth/2 - pointerRef.current.x) * 0.05;
-                        pointerRef.current.y += (window.innerHeight/2 - pointerRef.current.y) * 0.05;
-                    }
-                    
-                    const rgb = hexToRgb(colorRef.current);
-                    gl.uniform3f(uniforms.u_base_color, rgb[0], rgb[1], rgb[2]);
-                    gl.uniform1f(uniforms.u_time, t);
-                    gl.uniform2f(uniforms.u_pointer_position, pointerRef.current.x / window.innerWidth, 1 - pointerRef.current.y / window.innerHeight);
-                    gl.uniform1f(uniforms.u_scroll_progress, window.pageYOffset / (2 * window.innerHeight));
-                    
-                    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-                    animationRef.current = requestAnimationFrame(render);
-                };
-                render();
-
-                const handleMove = (e) => { 
-                    pointerRef.current.tX = e.clientX || (e.touches && e.touches[0].clientX); 
-                    pointerRef.current.tY = e.clientY || (e.touches && e.touches[0].clientY); 
-                };
-
-                window.addEventListener('pointermove', handleMove);
-                window.addEventListener('touchmove', handleMove);
-
-                return () => {
-                    cancelAnimationFrame(animationRef.current);
-                    window.removeEventListener('resize', resize);
-                    window.removeEventListener('pointermove', handleMove);
-                    window.removeEventListener('touchmove', handleMove);
-                };
-            }, [mouseTracking]);
-
-            return <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-95 z-0" style={{ backgroundColor: '#000' }} />;
+          gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+          rafRef.current = requestAnimationFrame(render);
         };
 
-        const MessageContent = ({ content }) => {
-            const thinkingMatch = content.match(/<thinking>([\s\S]*?)<\/thinking>/);
-            const thinking = thinkingMatch ? thinkingMatch[1] : null;
-            const mainContent = content.replace(/<thinking>[\s\S]*?<\/thinking>/, '').trim();
+        const handleMove = (e) => {
+          pointerRef.current.tX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+          pointerRef.current.tY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+        };
 
-            return (
-                <div className="prose">
-                    {thinking && (
-                        <div className="ai-thought flex flex-col gap-1">
-                            <span className="text-[10px] uppercase tracking-widest font-bold opacity-50 flex items-center gap-2">
-                                <Icon name="brain" size={10} /> Réflexion
-                            </span>
-                            <div dangerouslySetInnerHTML={{ __html: marked.parse(thinking) }} />
-                        </div>
-                    )}
-                    <div dangerouslySetInnerHTML={{ __html: marked.parse(mainContent) }} />
+        window.addEventListener("pointermove", handleMove, { passive: true });
+        window.addEventListener("touchmove", handleMove, { passive: true });
+
+        // WebGL context loss handling (robuste)
+        const onLost = (ev) => {
+          ev.preventDefault();
+          if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        };
+        const onRestored = () => {
+          // ré-init complète
+          cleanup();
+          initGL();
+        };
+        canvas.addEventListener("webglcontextlost", onLost, false);
+        canvas.addEventListener("webglcontextrestored", onRestored, false);
+
+        render();
+
+        const cleanup = () => {
+          if (rafRef.current) cancelAnimationFrame(rafRef.current);
+          window.removeEventListener("resize", resize);
+          window.removeEventListener("pointermove", handleMove);
+          window.removeEventListener("touchmove", handleMove);
+          canvas.removeEventListener("webglcontextlost", onLost);
+          canvas.removeEventListener("webglcontextrestored", onRestored);
+        };
+
+        return cleanup;
+      };
+
+      useEffect(() => {
+        let cleanup = null;
+        cleanup = initGL();
+        return () => { if (cleanup) cleanup(); };
+        // ✅ ne dépend pas de mouseTracking/couleur => évite l'arrêt après nouveau chat
+      }, []);
+
+      return (
+        <canvas
+          ref={canvasRef}
+          className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-95 z-0"
+          style={{ backgroundColor: "#000" }}
+        />
+      );
+    };
+
+    /*************************
+     * APP
+     *************************/
+    const App = () => {
+      const isDesktop = useMediaQuery("(min-width: 768px)");
+
+      const getInitialSidebarOpen = () => {
+        try { return window.matchMedia("(min-width: 768px)").matches; }
+        catch { return true; }
+      };
+
+      const [sessions, setSessions] = useState([{ id: 1, title: "Nouvelle conversation", messages: [] }]);
+      const [activeSessionId, setActiveSessionId] = useState(1);
+
+      // ✅ Mobile: sidebar accessible (drawer)
+      const [isSidebarOpen, setIsSidebarOpen] = useState(getInitialSidebarOpen);
+
+      const [inputText, setInputText] = useState("");
+      const [chatPendingCount, setChatPendingCount] = useState(0);
+      const isChatLoading = chatPendingCount > 0;
+
+      const [thoughtStepIndex, setThoughtStepIndex] = useState(0);
+      const [isRecording, setIsRecording] = useState(false);
+      const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+
+      const [isConfigOpen, setIsConfigOpen] = useState(false);
+      const [config] = useState(DEFAULT_CONFIG);
+      const [glowColor, setGlowColor] = useState("#6366f1");
+      const [enableMouseTracking, setEnableMouseTracking] = useState(true);
+
+      // ✅ Sidebar upload state (ne doit pas poster dans le chat)
+      const [sidebarUpload, setSidebarUpload] = useState({
+        status: "idle", // idle | uploading | success | error
+        fileName: "",
+        message: "",
+      });
+
+      const chatFileInputRef = useRef(null);
+      const cameraInputRef = useRef(null);
+      const sidebarFileInputRef = useRef(null);
+
+      const messagesEndRef = useRef(null);
+      const recognitionRef = useRef(null);
+
+      const objectUrlsRef = useRef(new Set());
+
+      const activeSession = useMemo(
+        () => sessions.find((s) => s.id === activeSessionId) || sessions[0],
+        [sessions, activeSessionId]
+      );
+
+      const isHome = activeSession.messages.length === 0;
+
+      // auto-scroll chat
+      useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, [activeSession.messages, isChatLoading]);
+
+      // thought steps
+      useEffect(() => {
+        let interval;
+        if (isChatLoading) {
+          setThoughtStepIndex(0);
+          interval = setInterval(() => {
+            setThoughtStepIndex((prev) => (prev < THOUGHT_STEPS.length - 1 ? prev + 1 : prev));
+          }, 4000);
+        }
+        return () => clearInterval(interval);
+      }, [isChatLoading]);
+
+      // speech recognition
+      useEffect(() => {
+        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRec) return;
+        recognitionRef.current = new SpeechRec();
+        recognitionRef.current.lang = "fr-FR";
+        recognitionRef.current.onresult = (e) => setInputText((prev) => prev + e.results[0][0].transcript);
+        recognitionRef.current.onend = () => setIsRecording(false);
+      }, []);
+
+      // cleanup object URLs
+      useEffect(() => {
+        return () => {
+          for (const url of objectUrlsRef.current) URL.revokeObjectURL(url);
+          objectUrlsRef.current.clear();
+        };
+      }, []);
+
+      // keep sidebar behavior when switching between desktop/mobile (sans bloquer l’utilisateur)
+      useEffect(() => {
+        if (isDesktop) {
+          // sur desktop, on garde l'état utilisateur
+          return;
+        }
+        // sur mobile, si on arrive et sidebar est ouverte, elle reste ouverte ; sinon accessible via bouton
+      }, [isDesktop]);
+
+      const updateSession = (sessionId, updater) => {
+        setSessions((prev) =>
+          prev.map((s) => (s.id === sessionId ? updater(s) : s))
+        );
+      };
+
+      const appendMessage = (sessionId, message) => {
+        updateSession(sessionId, (s) => ({ ...s, messages: [...s.messages, message] }));
+      };
+
+      const patchMessage = (sessionId, messageId, patch) => {
+        updateSession(sessionId, (s) => ({
+          ...s,
+          messages: s.messages.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
+        }));
+      };
+
+      const beginChatRequest = () => setChatPendingCount((n) => n + 1);
+      const endChatRequest = () => setChatPendingCount((n) => Math.max(0, n - 1));
+
+      /*************************
+       * ACTIONS: TEXT MESSAGE
+       *************************/
+      const handleSendMessage = async () => {
+        if (!inputText.trim()) return;
+
+        const sessionId = activeSessionId;
+        const currentText = inputText.trim();
+        const userMsg = { id: uid(), role: "user", type: "text", content: currentText };
+
+        // set title if first message
+        updateSession(sessionId, (s) => ({
+          ...s,
+          title: s.messages.length === 0 ? currentText.slice(0, 30) : s.title,
+          messages: [...s.messages, userMsg],
+        }));
+
+        setInputText("");
+        beginChatRequest();
+
+        const chatHistory = [...activeSession.messages, userMsg];
+
+        try {
+          const { ok, status, data } = await fetchWebhook(N8N_TEXT_WEBHOOK, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message: currentText,
+              sessionId,
+              chatHistory,
+            }),
+          });
+
+          if (!ok) throw new Error(`Webhook text refusé (${status})`);
+
+          const botResponse = normalizeWebhookResponseToText(data);
+          appendMessage(sessionId, { id: uid(), role: "assistant", type: "text", content: botResponse });
+        } catch (e) {
+          appendMessage(sessionId, {
+            id: uid(),
+            role: "assistant",
+            type: "text",
+            content: "Erreur lors de la communication avec le serveur (Webhook).",
+            isError: true,
+          });
+        } finally {
+          endChatRequest();
+        }
+      };
+
+      /*************************
+       * ACTIONS: FILE UPLOAD (CHAT)
+       * ✅ reste en attente dans l'UI jusqu'à validation du webhook
+       *************************/
+      const handleChatFileUpload = async (files) => {
+        if (!files || !files.length) return;
+
+        const sessionId = activeSessionId;
+        const file = files[0];
+
+        setShowAttachmentMenu(false);
+
+        const previewUrl = (file.type || "").startsWith("image/") ? URL.createObjectURL(file) : "";
+        if (previewUrl) objectUrlsRef.current.add(previewUrl);
+
+        const fileMsgId = uid();
+        const fileMsg = {
+          id: fileMsgId,
+          role: "user",
+          type: "file",
+          fileName: file.name,
+          mimeType: file.type || "",
+          previewUrl,
+          status: "uploading",
+        };
+
+        appendMessage(sessionId, fileMsg);
+        beginChatRequest();
+
+        const chatHistory = [...activeSession.messages, fileMsg];
+
+        try {
+          const serverText = await sendFileToWebhook({
+            file,
+            sessionId,
+            source: "chat",
+            chatHistory
+          });
+
+          // ✅ validation -> on marque "sent"
+          patchMessage(sessionId, fileMsgId, { status: "sent" });
+
+          // réponse assistant (si webhook renvoie du texte)
+          if (serverText && String(serverText).trim()) {
+            appendMessage(sessionId, {
+              id: uid(),
+              role: "assistant",
+              type: "text",
+              content: serverText,
+            });
+          }
+        } catch (e) {
+          patchMessage(sessionId, fileMsgId, {
+            status: "error",
+            error: e?.message || "Erreur lors de l'upload.",
+          });
+        } finally {
+          endChatRequest();
+        }
+
+        // reset input value (important to re-select same file)
+        if (chatFileInputRef.current) chatFileInputRef.current.value = "";
+        if (cameraInputRef.current) cameraInputRef.current.value = "";
+      };
+
+      /*************************
+       * ACTIONS: FILE UPLOAD (SIDEBAR)
+       * ✅ ne doit PAS poster dans le chat
+       * ✅ affiche uniquement un statut interne sidebar jusqu'à validation
+       *************************/
+      const handleSidebarFileUpload = async (files) => {
+        if (!files || !files.length) return;
+
+        const file = files[0];
+        const sessionId = activeSessionId; // on garde contexte, sans écrire dans le chat
+
+        setSidebarUpload({
+          status: "uploading",
+          fileName: file.name,
+          message: "Chargement en cours…",
+        });
+
+        try {
+          const serverText = await sendFileToWebhook({
+            file,
+            sessionId,
+            source: "sidebar",
+            chatHistory: null
+          });
+
+          setSidebarUpload({
+            status: "success",
+            fileName: file.name,
+            message: serverText || "Document importé avec succès.",
+          });
+        } catch (e) {
+          setSidebarUpload({
+            status: "error",
+            fileName: file.name,
+            message: e?.message || "Erreur lors de l'import.",
+          });
+        } finally {
+          if (sidebarFileInputRef.current) sidebarFileInputRef.current.value = "";
+        }
+      };
+
+      const createNewChat = () => {
+        const id = Date.now();
+        setSessions((prev) => [{ id, title: "Nouveau chat", messages: [] }, ...prev]);
+        setActiveSessionId(id);
+
+        // Sur mobile, on ferme le drawer pour revenir au chat
+        if (!isDesktop) setIsSidebarOpen(false);
+      };
+
+      /*************************
+       * RENDER
+       *************************/
+      const sidebarDrawerClasses = `
+        fixed md:relative inset-y-0 left-0
+        w-72
+        ${isSidebarOpen ? "translate-x-0 md:w-72" : "-translate-x-full md:w-0"}
+        md:translate-x-0
+        transition-all duration-300
+        bg-black/60 backdrop-blur-xl border-r border-white/10
+        flex flex-col z-40 overflow-hidden
+      `;
+
+      return (
+        <div className="flex h-full relative text-white overflow-hidden bg-black">
+          <NeuralGlow color={glowColor} mouseTracking={enableMouseTracking} />
+
+          {/* ✅ Overlay mobile pour fermer la sidebar */}
+          {!isDesktop && isSidebarOpen && (
+            <div
+              className="fixed inset-0 bg-black/60 z-30"
+              onClick={() => setIsSidebarOpen(false)}
+            />
+          )}
+
+          {/* SIDEBAR */}
+          <aside className={sidebarDrawerClasses}>
+            <div className="w-72 flex flex-col h-full">
+              <div className="p-4 space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-lg px-2 opacity-80">Menu</span>
+                  <button
+                    onClick={() => setIsSidebarOpen(false)}
+                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  >
+                    <Icon name="panel-left-close" />
+                  </button>
                 </div>
-            );
-        };
 
-        const App = () => {
-            const [sessions, setSessions] = useState([{ id: 1, title: 'Nouvelle conversation', messages: [] }]);
-            const [activeSessionId, setActiveSessionId] = useState(1);
-            const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-            const [inputText, setInputText] = useState('');
-            const [isLoading, setIsLoading] = useState(false);
-            const [thoughtStepIndex, setThoughtStepIndex] = useState(0);
-            const [isRecording, setIsRecording] = useState(false);
-            const [showImageSource, setShowImageSource] = useState(false);
-            
-            const [isConfigOpen, setIsConfigOpen] = useState(false);
-            const [config, setConfig] = useState(DEFAULT_CONFIG);
-            const [glowColor, setGlowColor] = useState("#6366f1");
-            const [enableMouseTracking, setEnableMouseTracking] = useState(true);
+                <div className="space-y-2">
+                  <button
+                    onClick={createNewChat}
+                    className="w-full flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 p-3 rounded-xl transition-all shadow-lg font-medium"
+                  >
+                    <Icon name="plus" size={18} /> Nouveau chat
+                  </button>
 
-            const imageInputRef = useRef(null);
-            const cameraInputRef = useRef(null);
-            const messagesEndRef = useRef(null);
-            const recognitionRef = useRef(null);
+                  {/* ✅ Sidebar upload => webhook FILE, sans message chat */}
+                  <button
+                    onClick={() => sidebarFileInputRef.current?.click()}
+                    className="w-full flex items-center gap-3 bg-white/5 hover:bg-white/10 border border-white/10 p-3 rounded-xl transition-all font-medium text-white/80"
+                  >
+                    <Icon name="upload-cloud" size={18} /> Charger un document
+                  </button>
 
-            const activeSession = sessions.find(s => s.id === activeSessionId) || sessions[0];
-            const isHome = activeSession.messages.length === 0;
-
-            useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [activeSession.messages, isLoading]);
-
-            useEffect(() => {
-                let interval;
-                if (isLoading) {
-                    setThoughtStepIndex(0);
-                    interval = setInterval(() => {
-                        setThoughtStepIndex(prev => (prev < THOUGHT_STEPS.length - 1 ? prev + 1 : prev));
-                    }, 4000);
-                }
-                return () => clearInterval(interval);
-            }, [isLoading]);
-
-            useEffect(() => {
-                const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-                if (SpeechRec) {
-                    recognitionRef.current = new SpeechRec();
-                    recognitionRef.current.lang = 'fr-FR';
-                    recognitionRef.current.onresult = (e) => setInputText(prev => prev + e.results[0][0].transcript);
-                    recognitionRef.current.onend = () => setIsRecording(false);
-                }
-            }, []);
-
-            const handleFileUpload = async (files) => {
-                if (!files || !files.length) return;
-                setIsLoading(true);
-                setShowImageSource(false);
-                const fileMsg = { id: Date.now(), role: 'user', content: `Document chargé : ${files[0].name}`, isFile: true };
-                setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, fileMsg] } : s));
-                
-                setTimeout(() => {
-                    setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, { id: Date.now()+1, role: 'assistant', content: `J'ai bien reçu votre document **${files[0].name}**. Comment puis-je vous aider avec ce fichier ?` }] } : s));
-                    setIsLoading(false);
-                }, 2000);
-            };
-
-            const handleSendMessage = async () => {
-                if (!inputText.trim()) return;
-                const currentText = inputText;
-                const userMsg = { id: Date.now(), role: 'user', content: currentText };
-                
-                setSessions(prev => prev.map(s => s.id === activeSessionId ? { 
-                    ...s, 
-                    messages: [...s.messages, userMsg], 
-                    title: s.messages.length === 0 ? currentText.slice(0, 30) : s.title 
-                } : s));
-                
-                setInputText('');
-                setIsLoading(true);
-
-                try {
-                    const res = await fetch(N8N_TEXT_WEBHOOK, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                            message: currentText, 
-                            sessionId: activeSessionId,
-                            chatHistory: activeSession.messages 
-                        })
-                    });
-                    
-                    const data = await res.json();
-                    
-                    let botResponse = "Aucune réponse valide reçue.";
-                    
-                    if (typeof data === 'string') {
-                        botResponse = data;
-                    } else if (Array.isArray(data) && data.length > 0) {
-                        const firstItem = data[0];
-                        botResponse = firstItem.output || firstItem.reply || firstItem.data || firstItem.text || (typeof firstItem === 'string' ? firstItem : JSON.stringify(firstItem));
-                    } else if (data && typeof data === 'object') {
-                        botResponse = data.output || data.reply || data.data || data.text || Object.values(data)[0] || "Réponse vide.";
-                    }
-
-                    setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, { id: Date.now() + 1, role: 'assistant', content: botResponse }] } : s));
-                } catch (e) {
-                    setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, { id: Date.now()+1, role: 'assistant', content: "Erreur lors de la communication avec le serveur (Webhook).", isError: true }] } : s));
-                } finally { 
-                    setIsLoading(false); 
-                }
-            };
-
-            return (
-                <div className="flex h-full relative text-white overflow-hidden bg-black">
-                    <NeuralGlow color={glowColor} mouseTracking={enableMouseTracking} />
-                    
-                    {/* SIDEBAR */}
-                    <aside className={`${isSidebarOpen ? 'w-72' : 'w-0'} transition-all duration-300 bg-black/60 backdrop-blur-xl border-r border-white/10 flex flex-col z-40 overflow-hidden`}>
-                        <div className="w-72 flex flex-col h-full">
-                            <div className="p-4 space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <span className="font-bold text-lg px-2 opacity-80">Menu</span>
-                                    <button onClick={() => setIsSidebarOpen(false)} className="p-2 hover:bg-white/10 rounded-lg transition-colors"><Icon name="panel-left-close" /></button>
-                                </div>
-                                
-                                <div className="space-y-2">
-                                    <button onClick={() => {
-                                        const id = Date.now();
-                                        setSessions([{ id, title: 'Nouveau chat', messages: [] }, ...sessions]);
-                                        setActiveSessionId(id);
-                                    }} className="w-full flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 p-3 rounded-xl transition-all shadow-lg font-medium">
-                                        <Icon name="plus" size={18} /> Nouveau chat
-                                    </button>
-                                    
-                                    <button onClick={() => imageInputRef.current?.click()} className="w-full flex items-center gap-3 bg-white/5 hover:bg-white/10 border border-white/10 p-3 rounded-xl transition-all font-medium text-white/80">
-                                        <Icon name="upload-cloud" size={18} /> Charger un document
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <div className="flex-1 overflow-y-auto px-2 space-y-1 custom-scrollbar">
-                                <div className="px-2 pb-2 text-[10px] uppercase tracking-widest font-bold opacity-30 mt-4">Historique</div>
-                                {sessions.map(s => (
-                                    <div key={s.id} onClick={() => setActiveSessionId(s.id)} className={`p-3 rounded-xl text-sm cursor-pointer truncate flex items-center gap-3 transition-all ${activeSessionId === s.id ? 'bg-white/10 text-white border border-white/5' : 'hover:bg-white/5 text-white/50 border border-transparent'}`}>
-                                        <Icon name="message-square" size={14} /> {s.title}
-                                    </div>
-                                ))}
-                            </div>
-                            
-                            <div className="p-4 border-t border-white/5">
-                                <button onClick={() => setIsConfigOpen(true)} className="flex items-center gap-2 w-full p-2 hover:bg-white/5 rounded-lg text-sm opacity-60 hover:opacity-100 transition-opacity">
-                                    <Icon name="settings" size={16} /> Paramètres
-                                </button>
-                            </div>
-                        </div>
-                    </aside>
-
-                    {/* MAIN */}
-                    <main className="flex-1 flex flex-col relative z-10 h-full">
-                        <header className="absolute top-0 w-full p-4 flex items-center gap-4 z-30 pointer-events-none">
-                            {!isSidebarOpen && <button onClick={() => setIsSidebarOpen(true)} className="p-2 bg-black/40 rounded-lg backdrop-blur-md border border-white/10 pointer-events-auto"><Icon name="panel-left" /></button>}
-                            <h1 className="font-bold text-xl drop-shadow-md opacity-80">{config.companyName}</h1>
-                        </header>
-
-                        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 relative">
-                            {isHome ? (
-                                <div className="h-full flex flex-col items-center justify-center text-center animate-fadeIn px-6">
-                                    <div className="p-6 rounded-full bg-black/40 border border-white/10 backdrop-blur-2xl mb-8 shadow-2xl relative">
-                                        <Icon name="sparkles" size={48} className="text-indigo-400" />
-                                        <div className="absolute inset-0 bg-indigo-500/20 blur-2xl rounded-full -z-10 animate-pulse"></div>
-                                    </div>
-                                    <h2 className="text-4xl md:text-5xl font-bold mb-4">Comment puis-je</h2>
-                                    <h2 className="text-4xl md:text-5xl font-black text-indigo-400 mb-4">vous aider ?</h2>
-                                    <p className="text-white/40 max-w-md">Posez-moi une question ou téléchargez un document pour commencer notre échange.</p>
-                                </div>
-                            ) : (
-                                <div className="max-w-3xl mx-auto py-20 space-y-6">
-                                    {activeSession.messages.map(m => (
-                                        <div key={m.id} className={`flex gap-4 animate-fadeIn ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-lg ${m.role === 'user' ? 'bg-indigo-600' : 'bg-black/80 border border-white/10'}`}>
-                                                <Icon name={m.role === 'user' ? 'user' : 'bot'} size={18} />
-                                            </div>
-                                            <div className={`p-5 rounded-2xl max-w-[85%] backdrop-blur-xl border border-white/10 shadow-xl ${m.role === 'user' ? 'bg-indigo-600/40 text-white/90' : 'bg-black/60'}`}>
-                                                <MessageContent content={m.content} />
-                                            </div>
-                                        </div>
-                                    ))}
-                                    
-                                    {isLoading && (
-                                        <div className="flex gap-4 animate-fadeIn">
-                                            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-black/60 border border-white/10">
-                                                <Icon name="bot" size={18} className="animate-pulse" />
-                                            </div>
-                                            <div className="flex flex-col gap-2 py-2">
-                                                <div className="flex items-center gap-3 text-white/40 text-sm animate-pulse-soft">
-                                                    <Icon name="loader-2" size={14} className="animate-spin text-indigo-400" />
-                                                    <span className="transition-all duration-1000">
-                                                        {THOUGHT_STEPS[thoughtStepIndex]}...
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                    <div ref={messagesEndRef} />
-                                </div>
-                            )}
+                  {/* ✅ statut interne sidebar */}
+                  {sidebarUpload.status !== "idle" && (
+                    <div className="mt-3 p-3 rounded-2xl bg-white/5 border border-white/10">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5">
+                          {sidebarUpload.status === "uploading" && (
+                            <Icon name="loader-2" size={16} className="animate-spin opacity-80" />
+                          )}
+                          {sidebarUpload.status === "success" && (
+                            <Icon name="check-circle-2" size={16} className="opacity-80" />
+                          )}
+                          {sidebarUpload.status === "error" && (
+                            <Icon name="x-circle" size={16} className="opacity-80" />
+                          )}
                         </div>
 
-                        {/* INPUT BAR */}
-                        <div className="p-4 pb-10 relative z-30">
-                            <div className="max-w-3xl mx-auto">
-                                <div className="bg-black/60 backdrop-blur-3xl border border-white/10 p-2 rounded-[32px] flex items-end gap-2 shadow-2xl transition-all focus-within:border-indigo-500/50">
-                                    <div className="relative">
-                                        <button 
-                                            onClick={() => setShowImageSource(!showImageSource)} 
-                                            className={`p-3 rounded-full transition-colors ${showImageSource ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white'}`}
-                                        >
-                                            <Icon name="paperclip" />
-                                        </button>
-                                        
-                                        {showImageSource && (
-                                            <div className="absolute bottom-full left-0 mb-4 bg-[#121212] border border-white/10 rounded-2xl p-2 w-52 shadow-2xl animate-fadeIn">
-                                                <button onClick={() => cameraInputRef.current.click()} className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl text-sm transition-colors text-left">
-                                                    <Icon name="camera" size={16} className="text-indigo-400" /> Prendre une photo
-                                                </button>
-                                                <button onClick={() => imageInputRef.current.click()} className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl text-sm transition-colors text-left">
-                                                    <Icon name="image" size={16} className="text-purple-400" /> Charger un document
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <textarea 
-                                        className="flex-1 bg-transparent border-none outline-none py-3 px-2 text-white placeholder-white/20 resize-none max-h-32 custom-scrollbar"
-                                        placeholder="Posez votre question..."
-                                        rows={1}
-                                        value={inputText}
-                                        onChange={e => setInputText(e.target.value)}
-                                        onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
-                                    />
-                                    
-                                    <button 
-                                        onClick={() => { if(!isRecording) { recognitionRef.current?.start(); setIsRecording(true); } else { recognitionRef.current?.stop(); } }}
-                                        className={`p-3 rounded-full transition-colors ${isRecording ? 'text-red-500 animate-pulse bg-red-500/10' : 'text-white/40 hover:text-white'}`}
-                                    >
-                                        <Icon name="mic" />
-                                    </button>
-                                    
-                                    <button onClick={handleSendMessage} className={`h-10 w-10 rounded-full flex items-center justify-center transition-all shrink-0 ${inputText.trim() ? 'bg-white text-black hover:scale-105' : 'bg-white/10 text-white/20 cursor-not-allowed'}`}>
-                                        <Icon name="arrow-up" size={20} />
-                                    </button>
-                                </div>
-                            </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium truncate">
+                            {sidebarUpload.fileName || "Document"}
+                          </div>
+                          <div className="text-xs opacity-60 mt-1 break-words">
+                            {sidebarUpload.message}
+                          </div>
+                          <div className="mt-2 flex gap-2">
+                            <button
+                              onClick={() => setSidebarUpload({ status: "idle", fileName: "", message: "" })}
+                              className="text-xs px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10"
+                            >
+                              Fermer
+                            </button>
+                          </div>
                         </div>
-
-                        <input type="file" ref={imageInputRef} className="hidden" accept="image/*,application/pdf,.doc,.docx,.txt" onChange={e => handleFileUpload(e.target.files)} />
-                        <input type="file" ref={cameraInputRef} className="hidden" accept="image/*" capture="environment" onChange={e => handleFileUpload(e.target.files)} />
-                    </main>
-
-                    {/* CONFIG MODAL */}
-                    {isConfigOpen && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4" onClick={() => setIsConfigOpen(false)}>
-                            <div className="bg-[#121212] border border-white/10 p-6 rounded-3xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
-                                <div className="flex justify-between items-center mb-6">
-                                    <h3 className="text-lg font-bold">Personnalisation</h3>
-                                    <button onClick={() => setIsConfigOpen(false)} className="p-1 hover:bg-white/10 rounded-full"><Icon name="x" size={16}/></button>
-                                </div>
-                                <div className="space-y-6">
-                                    <div>
-                                        <label className="block text-[10px] font-bold uppercase tracking-widest opacity-40 mb-3">Couleur Thématique</label>
-                                        <div className="flex items-center gap-4 p-3 bg-white/5 rounded-2xl border border-white/5">
-                                            <input type="color" value={glowColor} onChange={e => setGlowColor(e.target.value)} className="w-10 h-10 rounded-xl bg-transparent border-none cursor-pointer overflow-hidden"/>
-                                            <span className="font-mono text-sm opacity-60 uppercase">{glowColor}</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-between items-center p-3 bg-white/5 rounded-2xl border border-white/5">
-                                        <div className="flex flex-col">
-                                            <span className="text-sm font-medium">Interaction Dynamique</span>
-                                            <span className="text-[10px] opacity-40 uppercase">Suivi de la souris</span>
-                                        </div>
-                                        <button 
-                                            onClick={() => setEnableMouseTracking(!enableMouseTracking)}
-                                            className={`w-12 h-6 rounded-full relative transition-colors ${enableMouseTracking ? 'bg-indigo-600' : 'bg-white/10'}`}
-                                        >
-                                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-md ${enableMouseTracking ? 'right-1' : 'left-1'}`} />
-                                        </button>
-                                    </div>
-                                </div>
-                                <button onClick={() => setIsConfigOpen(false)} className="w-full mt-8 py-4 bg-white text-black rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-gray-200 transition-colors">Terminer</button>
-                            </div>
-                        </div>
-                    )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-            );
-        };
+              </div>
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
+              <div className="flex-1 overflow-y-auto px-2 space-y-1 custom-scrollbar">
+                <div className="px-2 pb-2 text-[10px] uppercase tracking-widest font-bold opacity-30 mt-4">
+                  Historique
+                </div>
+                {sessions.map((s) => (
+                  <div
+                    key={s.id}
+                    onClick={() => {
+                      setActiveSessionId(s.id);
+                      if (!isDesktop) setIsSidebarOpen(false);
+                    }}
+                    className={`p-3 rounded-xl text-sm cursor-pointer truncate flex items-center gap-3 transition-all ${
+                      activeSessionId === s.id
+                        ? "bg-white/10 text-white border border-white/5"
+                        : "hover:bg-white/5 text-white/50 border border-transparent"
+                    }`}
+                  >
+                    <Icon name="message-square" size={14} /> {s.title}
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-4 border-t border-white/5">
+                <button
+                  onClick={() => setIsConfigOpen(true)}
+                  className="flex items-center gap-2 w-full p-2 hover:bg-white/5 rounded-lg text-sm opacity-60 hover:opacity-100 transition-opacity"
+                >
+                  <Icon name="settings" size={16} /> Paramètres
+                </button>
+              </div>
+            </div>
+          </aside>
+
+          {/* MAIN */}
+          <main className="flex-1 flex flex-col relative z-10 h-full">
+            <header className="absolute top-0 w-full p-4 flex items-center gap-4 z-30 pointer-events-none">
+              {!isSidebarOpen && (
+                <button
+                  onClick={() => setIsSidebarOpen(true)}
+                  className="p-2 bg-black/40 rounded-lg backdrop-blur-md border border-white/10 pointer-events-auto"
+                >
+                  <Icon name="panel-left" />
+                </button>
+              )}
+              <h1 className="font-bold text-xl drop-shadow-md opacity-80 pointer-events-none">
+                {config.companyName}
+              </h1>
+            </header>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 relative">
+              {isHome ? (
+                <div className="h-full flex flex-col items-center justify-center text-center animate-fadeIn px-6">
+                  <div className="p-6 rounded-full bg-black/40 border border-white/10 backdrop-blur-2xl mb-8 shadow-2xl relative">
+                    <Icon name="sparkles" size={48} className="text-indigo-400" />
+                    <div className="absolute inset-0 bg-indigo-500/20 blur-2xl rounded-full -z-10 animate-pulse"></div>
+                  </div>
+                  <h2 className="text-4xl md:text-5xl font-bold mb-4">Comment puis-je</h2>
+                  <h2 className="text-4xl md:text-5xl font-black text-indigo-400 mb-4">vous aider ?</h2>
+                  <p className="text-white/40 max-w-md">
+                    Posez-moi une question ou téléchargez un document pour commencer notre échange.
+                  </p>
+                </div>
+              ) : (
+                <div className="max-w-3xl mx-auto py-20 space-y-6">
+                  {activeSession.messages.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`flex gap-4 animate-fadeIn ${m.role === "user" ? "flex-row-reverse" : ""}`}
+                    >
+                      <div
+                        className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-lg ${
+                          m.role === "user"
+                            ? "bg-indigo-600"
+                            : "bg-black/80 border border-white/10"
+                        }`}
+                      >
+                        <Icon name={m.role === "user" ? "user" : "bot"} size={18} />
+                      </div>
+
+                      <div
+                        className={`p-5 rounded-2xl max-w-[85%] backdrop-blur-xl border border-white/10 shadow-xl ${
+                          m.role === "user" ? "bg-indigo-600/40 text-white/90" : "bg-black/60"
+                        }`}
+                      >
+                        {m.type === "file" ? <FileBubble m={m} /> : <MessageContent content={m.content} />}
+                      </div>
+                    </div>
+                  ))}
+
+                  {isChatLoading && (
+                    <div className="flex gap-4 animate-fadeIn">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-black/60 border border-white/10">
+                        <Icon name="bot" size={18} className="animate-pulse" />
+                      </div>
+                      <div className="flex flex-col gap-2 py-2">
+                        <div className="flex items-center gap-3 text-white/40 text-sm animate-pulse-soft">
+                          <Icon name="loader-2" size={14} className="animate-spin text-indigo-400" />
+                          <span className="transition-all duration-1000">{THOUGHT_STEPS[thoughtStepIndex]}…</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div ref={messagesEndRef} />
+                </div>
+              )}
+            </div>
+
+            {/* INPUT BAR */}
+            <div className="p-4 pb-10 relative z-30">
+              <div className="max-w-3xl mx-auto">
+                <div className="bg-black/60 backdrop-blur-3xl border border-white/10 p-2 rounded-[32px] flex items-end gap-2 shadow-2xl transition-all focus-within:border-indigo-500/50">
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
+                      className={`p-3 rounded-full transition-colors ${
+                        showAttachmentMenu ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
+                      }`}
+                    >
+                      <Icon name="paperclip" />
+                    </button>
+
+                    {showAttachmentMenu && (
+                      <div className="absolute bottom-full left-0 mb-4 bg-[#121212] border border-white/10 rounded-2xl p-2 w-52 shadow-2xl animate-fadeIn">
+                        <button
+                          onClick={() => cameraInputRef.current?.click()}
+                          className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl text-sm transition-colors text-left"
+                        >
+                          <Icon name="camera" size={16} className="text-indigo-400" /> Prendre une photo
+                        </button>
+                        <button
+                          onClick={() => chatFileInputRef.current?.click()}
+                          className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl text-sm transition-colors text-left"
+                        >
+                          <Icon name="image" size={16} className="text-purple-400" /> Charger un document
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <textarea
+                    className="flex-1 bg-transparent border-none outline-none py-3 px-2 text-white placeholder-white/20 resize-none max-h-32 custom-scrollbar"
+                    placeholder="Posez votre question..."
+                    rows={1}
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                  />
+
+                  <button
+                    onClick={() => {
+                      if (!isRecording) {
+                        recognitionRef.current?.start();
+                        setIsRecording(true);
+                      } else {
+                        recognitionRef.current?.stop();
+                      }
+                    }}
+                    className={`p-3 rounded-full transition-colors ${
+                      isRecording
+                        ? "text-red-500 animate-pulse bg-red-500/10"
+                        : "text-white/40 hover:text-white"
+                    }`}
+                  >
+                    <Icon name="mic" />
+                  </button>
+
+                  <button
+                    onClick={handleSendMessage}
+                    className={`h-10 w-10 rounded-full flex items-center justify-center transition-all shrink-0 ${
+                      inputText.trim()
+                        ? "bg-white text-black hover:scale-105"
+                        : "bg-white/10 text-white/20 cursor-not-allowed"
+                    }`}
+                  >
+                    <Icon name="arrow-up" size={20} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* INPUTS */}
+            <input
+              type="file"
+              ref={chatFileInputRef}
+              className="hidden"
+              accept="image/*,application/pdf,.doc,.docx,.txt"
+              onChange={(e) => handleChatFileUpload(e.target.files)}
+            />
+            <input
+              type="file"
+              ref={cameraInputRef}
+              className="hidden"
+              accept="image/*"
+              capture="environment"
+              onChange={(e) => handleChatFileUpload(e.target.files)}
+            />
+            <input
+              type="file"
+              ref={sidebarFileInputRef}
+              className="hidden"
+              accept="image/*,application/pdf,.doc,.docx,.txt"
+              onChange={(e) => handleSidebarFileUpload(e.target.files)}
+            />
+          </main>
+
+          {/* CONFIG MODAL */}
+          {isConfigOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4"
+              onClick={() => setIsConfigOpen(false)}
+            >
+              <div
+                className="bg-[#121212] border border-white/10 p-6 rounded-3xl w-full max-w-sm shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-lg font-bold">Personnalisation</h3>
+                  <button onClick={() => setIsConfigOpen(false)} className="p-1 hover:bg-white/10 rounded-full">
+                    <Icon name="x" size={16} />
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest opacity-40 mb-3">
+                      Couleur Thématique
+                    </label>
+                    <div className="flex items-center gap-4 p-3 bg-white/5 rounded-2xl border border-white/5">
+                      <input
+                        type="color"
+                        value={glowColor}
+                        onChange={(e) => setGlowColor(e.target.value)}
+                        className="w-10 h-10 rounded-xl bg-transparent border-none cursor-pointer overflow-hidden"
+                      />
+                      <span className="font-mono text-sm opacity-60 uppercase">{glowColor}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center p-3 bg-white/5 rounded-2xl border border-white/5">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium">Interaction Dynamique</span>
+                      <span className="text-[10px] opacity-40 uppercase">Suivi de la souris</span>
+                    </div>
+                    <button
+                      onClick={() => setEnableMouseTracking(!enableMouseTracking)}
+                      className={`w-12 h-6 rounded-full relative transition-colors ${
+                        enableMouseTracking ? "bg-indigo-600" : "bg-white/10"
+                      }`}
+                    >
+                      <div
+                        className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-md ${
+                          enableMouseTracking ? "right-1" : "left-1"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setIsConfigOpen(false)}
+                  className="w-full mt-8 py-4 bg-white text-black rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-gray-200 transition-colors"
+                >
+                  Terminer
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
 </body>
 </html>
