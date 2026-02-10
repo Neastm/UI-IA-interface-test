@@ -55,7 +55,6 @@
     const N8N_TEXT_WEBHOOK =
       "https://esmieunathan.app.n8n.cloud/webhook/e19ae4b2-a192-4512-9e5f-b03d0580be78";
 
-    // ✅ Nouveau webhook demandé pour l'upload SIDEBAR (et utilisé aussi pour les fichiers en conversation)
     const N8N_FILE_WEBHOOK =
       "https://esmieunathan.app.n8n.cloud/webhook/2131cbf7-62e1-4e92-86a7-69a51cd1ad3b";
 
@@ -73,7 +72,7 @@
     };
 
     /*************************
-     * UTILS
+     * UTILS (SAFE)
      *************************/
     const uid = () => {
       try { return crypto.randomUUID(); }
@@ -118,10 +117,12 @@
       return String(data);
     };
 
+    // ✅ Fetch safe: protège contre réponse énorme + parsing safe
     const fetchWebhook = async (url, options) => {
       const res = await fetch(url, options);
       const raw = await res.text();
-      const parsed = safeJsonParse(raw);
+      const safeRaw = raw.length > 2_000_000 ? raw.slice(0, 2_000_000) : raw;
+      const parsed = safeJsonParse(safeRaw);
       return { ok: res.ok, status: res.status, data: parsed };
     };
 
@@ -147,33 +148,34 @@
       return normalizeWebhookResponseToText(data);
     };
 
-    const useMediaQuery = (query) => {
-      const get = () => {
-        if (!window.matchMedia) return false;
-        return window.matchMedia(query).matches;
-      };
-      const [matches, setMatches] = useState(get);
+    /*************************
+     * ✅ Hook desktop fiable (innerWidth) à la place de matchMedia
+     *************************/
+    const useIsDesktop = () => {
+      const get = () => (typeof window !== "undefined" ? window.innerWidth >= 768 : true);
+      const [isDesktop, setIsDesktop] = useState(get);
 
       useEffect(() => {
-        if (!window.matchMedia) return;
-        const mql = window.matchMedia(query);
-        const onChange = (e) => setMatches(e.matches);
-        if (mql.addEventListener) mql.addEventListener("change", onChange);
-        else mql.addListener(onChange);
-        return () => {
-          if (mql.removeEventListener) mql.removeEventListener("change", onChange);
-          else mql.removeListener(onChange);
-        };
-      }, [query]);
+        const onResize = () => setIsDesktop(window.innerWidth >= 768);
+        window.addEventListener("resize", onResize);
+        return () => window.removeEventListener("resize", onResize);
+      }, []);
 
-      return matches;
+      return isDesktop;
     };
 
     /*************************
-     * UI COMPONENTS
+     * UI COMPONENTS (SAFE)
      *************************/
     const Icon = ({ name, size = 20, className = "" }) => {
-      useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name]);
+      useEffect(() => {
+        try {
+          if (window.lucide && typeof window.lucide.createIcons === "function") {
+            window.lucide.createIcons();
+          }
+        } catch (_) {}
+      }, [name]);
+
       return (
         <i
           data-lucide={name}
@@ -189,12 +191,31 @@
       );
     };
 
+    // ✅ Marked safe: si marked indisponible => fallback HTML safe
+    const safeMarkedParse = (md) => {
+      try {
+        if (window.marked && typeof window.marked.parse === "function") {
+          return window.marked.parse(md || "");
+        }
+      } catch (_) {}
+
+      const esc = (s) =>
+        String(s || "").replace(/[&<>"']/g, (c) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          "\"": "&quot;",
+          "'": "&#39;",
+        }[c]));
+
+      return `<p>${esc(md || "")}</p>`;
+    };
+
     const MessageContent = ({ content }) => {
-      const thinkingMatch = content?.match?.(/<thinking>([\s\S]*?)<\/thinking>/);
+      const raw = String(content || "");
+      const thinkingMatch = raw.match(/<thinking>([\s\S]*?)<\/thinking>/);
       const thinking = thinkingMatch ? thinkingMatch[1] : null;
-      const mainContent = (content || "")
-        .replace(/<thinking>[\s\S]*?<\/thinking>/, "")
-        .trim();
+      const mainContent = raw.replace(/<thinking>[\s\S]*?<\/thinking>/, "").trim();
 
       return (
         <div className="prose">
@@ -203,10 +224,10 @@
               <span className="text-[10px] uppercase tracking-widest font-bold opacity-50 flex items-center gap-2">
                 <Icon name="brain" size={10} /> Réflexion
               </span>
-              <div dangerouslySetInnerHTML={{ __html: marked.parse(thinking) }} />
+              <div dangerouslySetInnerHTML={{ __html: safeMarkedParse(thinking) }} />
             </div>
           )}
-          <div dangerouslySetInnerHTML={{ __html: marked.parse(mainContent) }} />
+          <div dangerouslySetInnerHTML={{ __html: safeMarkedParse(mainContent) }} />
         </div>
       );
     };
@@ -260,9 +281,7 @@
     };
 
     /*************************
-     * NEURAL GLOW (corrigé)
-     * - boucle RAF robuste (ne dépend plus de re-renders)
-     * - mouseTracking + couleur via refs
+     * NEURAL GLOW (inchangé)
      *************************/
     const NeuralGlow = ({ color, mouseTracking }) => {
       const canvasRef = useRef(null);
@@ -432,13 +451,11 @@
         window.addEventListener("pointermove", handleMove, { passive: true });
         window.addEventListener("touchmove", handleMove, { passive: true });
 
-        // WebGL context loss handling (robuste)
         const onLost = (ev) => {
           ev.preventDefault();
           if (rafRef.current) cancelAnimationFrame(rafRef.current);
         };
         const onRestored = () => {
-          // ré-init complète
           cleanup();
           initGL();
         };
@@ -463,7 +480,6 @@
         let cleanup = null;
         cleanup = initGL();
         return () => { if (cleanup) cleanup(); };
-        // ✅ ne dépend pas de mouseTracking/couleur => évite l'arrêt après nouveau chat
       }, []);
 
       return (
@@ -476,20 +492,57 @@
     };
 
     /*************************
+     * ✅ ErrorBoundary: plus jamais d'écran noir silencieux
+     *************************/
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+      }
+      static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+      }
+      componentDidCatch(error, info) {
+        console.error("UI Crash:", error, info);
+      }
+      render() {
+        if (this.state.hasError) {
+          return (
+            <div className="h-full w-full flex items-center justify-center text-white p-6">
+              <div className="max-w-lg w-full bg-black/60 border border-white/10 rounded-3xl p-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <Icon name="alert-triangle" size={16} />
+                  <div className="font-bold">Une erreur est survenue</div>
+                </div>
+                <div className="text-sm opacity-70 break-words">
+                  {String(this.state.error?.message || this.state.error || "Erreur inconnue")}
+                </div>
+                <button
+                  className="mt-4 px-4 py-2 rounded-xl bg-white text-black font-medium"
+                  onClick={() => location.reload()}
+                >
+                  Recharger
+                </button>
+              </div>
+            </div>
+          );
+        }
+        return this.props.children;
+      }
+    }
+
+    /*************************
      * APP
      *************************/
     const App = () => {
-      const isDesktop = useMediaQuery("(min-width: 768px)");
+      const isDesktop = useIsDesktop();
 
-      const getInitialSidebarOpen = () => {
-        try { return window.matchMedia("(min-width: 768px)").matches; }
-        catch { return true; }
-      };
+      const getInitialSidebarOpen = () =>
+        (typeof window !== "undefined" ? window.innerWidth >= 768 : true);
 
       const [sessions, setSessions] = useState([{ id: 1, title: "Nouvelle conversation", messages: [] }]);
       const [activeSessionId, setActiveSessionId] = useState(1);
 
-      // ✅ Mobile: sidebar accessible (drawer)
       const [isSidebarOpen, setIsSidebarOpen] = useState(getInitialSidebarOpen);
 
       const [inputText, setInputText] = useState("");
@@ -505,9 +558,16 @@
       const [glowColor, setGlowColor] = useState("#6366f1");
       const [enableMouseTracking, setEnableMouseTracking] = useState(true);
 
-      // ✅ Sidebar upload state (ne doit pas poster dans le chat)
+      // ✅ Empêche overlay mobile de "bloquer" l'UI pendant le file picker
+      const [isPickingFile, setIsPickingFile] = useState(false);
+      useEffect(() => {
+        const onFocusBack = () => setIsPickingFile(false);
+        window.addEventListener("focus", onFocusBack);
+        return () => window.removeEventListener("focus", onFocusBack);
+      }, []);
+
       const [sidebarUpload, setSidebarUpload] = useState({
-        status: "idle", // idle | uploading | success | error
+        status: "idle",
         fileName: "",
         message: "",
       });
@@ -528,12 +588,10 @@
 
       const isHome = activeSession.messages.length === 0;
 
-      // auto-scroll chat
       useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }, [activeSession.messages, isChatLoading]);
 
-      // thought steps
       useEffect(() => {
         let interval;
         if (isChatLoading) {
@@ -545,7 +603,6 @@
         return () => clearInterval(interval);
       }, [isChatLoading]);
 
-      // speech recognition
       useEffect(() => {
         const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRec) return;
@@ -555,7 +612,6 @@
         recognitionRef.current.onend = () => setIsRecording(false);
       }, []);
 
-      // cleanup object URLs
       useEffect(() => {
         return () => {
           for (const url of objectUrlsRef.current) URL.revokeObjectURL(url);
@@ -563,19 +619,8 @@
         };
       }, []);
 
-      // keep sidebar behavior when switching between desktop/mobile (sans bloquer l’utilisateur)
-      useEffect(() => {
-        if (isDesktop) {
-          // sur desktop, on garde l'état utilisateur
-          return;
-        }
-        // sur mobile, si on arrive et sidebar est ouverte, elle reste ouverte ; sinon accessible via bouton
-      }, [isDesktop]);
-
       const updateSession = (sessionId, updater) => {
-        setSessions((prev) =>
-          prev.map((s) => (s.id === sessionId ? updater(s) : s))
-        );
+        setSessions((prev) => prev.map((s) => (s.id === sessionId ? updater(s) : s)));
       };
 
       const appendMessage = (sessionId, message) => {
@@ -592,9 +637,6 @@
       const beginChatRequest = () => setChatPendingCount((n) => n + 1);
       const endChatRequest = () => setChatPendingCount((n) => Math.max(0, n - 1));
 
-      /*************************
-       * ACTIONS: TEXT MESSAGE
-       *************************/
       const handleSendMessage = async () => {
         if (!inputText.trim()) return;
 
@@ -602,7 +644,6 @@
         const currentText = inputText.trim();
         const userMsg = { id: uid(), role: "user", type: "text", content: currentText };
 
-        // set title if first message
         updateSession(sessionId, (s) => ({
           ...s,
           title: s.messages.length === 0 ? currentText.slice(0, 30) : s.title,
@@ -618,11 +659,7 @@
           const { ok, status, data } = await fetchWebhook(N8N_TEXT_WEBHOOK, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              message: currentText,
-              sessionId,
-              chatHistory,
-            }),
+            body: JSON.stringify({ message: currentText, sessionId, chatHistory }),
           });
 
           if (!ok) throw new Error(`Webhook text refusé (${status})`);
@@ -642,10 +679,6 @@
         }
       };
 
-      /*************************
-       * ACTIONS: FILE UPLOAD (CHAT)
-       * ✅ reste en attente dans l'UI jusqu'à validation du webhook
-       *************************/
       const handleChatFileUpload = async (files) => {
         if (!files || !files.length) return;
 
@@ -654,8 +687,16 @@
 
         setShowAttachmentMenu(false);
 
-        const previewUrl = (file.type || "").startsWith("image/") ? URL.createObjectURL(file) : "";
-        if (previewUrl) objectUrlsRef.current.add(previewUrl);
+        // ✅ createObjectURL safe
+        let previewUrl = "";
+        try {
+          if ((file.type || "").startsWith("image/")) {
+            previewUrl = URL.createObjectURL(file);
+            objectUrlsRef.current.add(previewUrl);
+          }
+        } catch (_) {
+          previewUrl = "";
+        }
 
         const fileMsgId = uid();
         const fileMsg = {
@@ -681,48 +722,28 @@
             chatHistory
           });
 
-          // ✅ validation -> on marque "sent"
           patchMessage(sessionId, fileMsgId, { status: "sent" });
 
-          // réponse assistant (si webhook renvoie du texte)
           if (serverText && String(serverText).trim()) {
-            appendMessage(sessionId, {
-              id: uid(),
-              role: "assistant",
-              type: "text",
-              content: serverText,
-            });
+            appendMessage(sessionId, { id: uid(), role: "assistant", type: "text", content: serverText });
           }
         } catch (e) {
-          patchMessage(sessionId, fileMsgId, {
-            status: "error",
-            error: e?.message || "Erreur lors de l'upload.",
-          });
+          patchMessage(sessionId, fileMsgId, { status: "error", error: e?.message || "Erreur lors de l'upload." });
         } finally {
           endChatRequest();
         }
 
-        // reset input value (important to re-select same file)
         if (chatFileInputRef.current) chatFileInputRef.current.value = "";
         if (cameraInputRef.current) cameraInputRef.current.value = "";
       };
 
-      /*************************
-       * ACTIONS: FILE UPLOAD (SIDEBAR)
-       * ✅ ne doit PAS poster dans le chat
-       * ✅ affiche uniquement un statut interne sidebar jusqu'à validation
-       *************************/
       const handleSidebarFileUpload = async (files) => {
         if (!files || !files.length) return;
 
         const file = files[0];
-        const sessionId = activeSessionId; // on garde contexte, sans écrire dans le chat
+        const sessionId = activeSessionId;
 
-        setSidebarUpload({
-          status: "uploading",
-          fileName: file.name,
-          message: "Chargement en cours…",
-        });
+        setSidebarUpload({ status: "uploading", fileName: file.name, message: "Chargement en cours…" });
 
         try {
           const serverText = await sendFileToWebhook({
@@ -752,14 +773,9 @@
         const id = Date.now();
         setSessions((prev) => [{ id, title: "Nouveau chat", messages: [] }, ...prev]);
         setActiveSessionId(id);
-
-        // Sur mobile, on ferme le drawer pour revenir au chat
         if (!isDesktop) setIsSidebarOpen(false);
       };
 
-      /*************************
-       * RENDER
-       *************************/
       const sidebarDrawerClasses = `
         fixed md:relative inset-y-0 left-0
         w-72
@@ -774,8 +790,8 @@
         <div className="flex h-full relative text-white overflow-hidden bg-black">
           <NeuralGlow color={glowColor} mouseTracking={enableMouseTracking} />
 
-          {/* ✅ Overlay mobile pour fermer la sidebar */}
-          {!isDesktop && isSidebarOpen && (
+          {/* ✅ Overlay mobile pour fermer la sidebar (désactivé pendant file picker) */}
+          {!isDesktop && isSidebarOpen && !isPickingFile && (
             <div
               className="fixed inset-0 bg-black/60 z-30"
               onClick={() => setIsSidebarOpen(false)}
@@ -804,15 +820,16 @@
                     <Icon name="plus" size={18} /> Nouveau chat
                   </button>
 
-                  {/* ✅ Sidebar upload => webhook FILE, sans message chat */}
                   <button
-                    onClick={() => sidebarFileInputRef.current?.click()}
+                    onClick={() => {
+                      setIsPickingFile(true);
+                      sidebarFileInputRef.current?.click();
+                    }}
                     className="w-full flex items-center gap-3 bg-white/5 hover:bg-white/10 border border-white/10 p-3 rounded-xl transition-all font-medium text-white/80"
                   >
                     <Icon name="upload-cloud" size={18} /> Charger un document
                   </button>
 
-                  {/* ✅ statut interne sidebar */}
                   {sidebarUpload.status !== "idle" && (
                     <div className="mt-3 p-3 rounded-2xl bg-white/5 border border-white/10">
                       <div className="flex items-start gap-3">
@@ -975,13 +992,19 @@
                     {showAttachmentMenu && (
                       <div className="absolute bottom-full left-0 mb-4 bg-[#121212] border border-white/10 rounded-2xl p-2 w-52 shadow-2xl animate-fadeIn">
                         <button
-                          onClick={() => cameraInputRef.current?.click()}
+                          onClick={() => {
+                            setIsPickingFile(true);
+                            cameraInputRef.current?.click();
+                          }}
                           className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl text-sm transition-colors text-left"
                         >
                           <Icon name="camera" size={16} className="text-indigo-400" /> Prendre une photo
                         </button>
                         <button
-                          onClick={() => chatFileInputRef.current?.click()}
+                          onClick={() => {
+                            setIsPickingFile(true);
+                            chatFileInputRef.current?.click();
+                          }}
                           className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl text-sm transition-colors text-left"
                         >
                           <Icon name="image" size={16} className="text-purple-400" /> Charger un document
@@ -1128,7 +1151,11 @@
     };
 
     const root = ReactDOM.createRoot(document.getElementById("root"));
-    root.render(<App />);
+    root.render(
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    );
   </script>
 </body>
 </html>
