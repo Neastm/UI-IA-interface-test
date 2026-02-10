@@ -5,23 +5,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nexus AI - Interface</title>
     
-    <!-- Chargement des bibliothèques nécessaires via CDN -->
+    <!-- Bibliothèques -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     
     <style>
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulseOpacity { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.7; } }
+        
         .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
+        .animate-pulse-soft { animation: pulseOpacity 2s infinite ease-in-out; }
+        
         body, html, #root { height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #000; }
         
-        /* Scrollbar personnalisée */
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+        .prose { color: #e5e7eb; font-size: 0.95rem; line-height: 1.6; }
+        .prose strong { color: #fff; }
+        .prose h1, .prose h2 { color: #fff; margin-top: 1em; margin-bottom: 0.5em; font-weight: 700; }
+        .prose code { background: rgba(255,255,255,0.1); padding: 0.2em 0.4em; border-radius: 0.3em; }
+        .prose pre { background: rgba(0,0,0,0.3); padding: 1em; border-radius: 0.5em; overflow-x: auto; }
+        
+        /* Style pour la réflexion transparente */
+        .ai-thought {
+            font-style: italic;
+            opacity: 0.6;
+            font-size: 0.85rem;
+            border-left: 2px solid rgba(255,255,255,0.2);
+            padding-left: 1rem;
+            margin-bottom: 1rem;
+            color: #9ca3af;
+        }
     </style>
 </head>
 <body>
@@ -30,22 +50,23 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
 
-        // --- CONFIGURATION EXTERNE ---
-        const N8N_WEBHOOK_URL = "https://esmieunathan.app.n8n.cloud/webhook/e19ae4b2-a192-4512-9e5f-b03d0580be78"; 
+        const N8N_TEXT_WEBHOOK = "https://esmieunathan.app.n8n.cloud/webhook/e19ae4b2-a192-4512-9e5f-b03d0580be78"; 
+        
+        const THOUGHT_STEPS = [
+            "Compréhension de la requête",
+            "Analyse des fichiers",
+            "Appel de la base documentaire",
+            "Réflexion du modèle",
+            "Rédaction du texte"
+        ];
 
         const DEFAULT_CONFIG = {
             companyName: "Nexus AI",
-            agentName: "Nexus Agent",
             primaryColor: "#6366f1",
-            secondaryColor: "#4f46e5",
-            welcomeMessage: "Bonjour ! Je suis l'IA de Nexus. Comment puis-je vous aider aujourd'hui ?"
         };
 
-        // Composant utilitaire pour les icônes Lucide
         const Icon = ({ name, size = 20, className = "" }) => {
-            useEffect(() => {
-                if (window.lucide) window.lucide.createIcons();
-            }, [name]);
+            useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name]);
             return <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}></i>;
         };
 
@@ -56,21 +77,13 @@
             const glRef = useRef(null);
             const uniformsRef = useRef(null);
             const pointerRef = useRef({ x: 0, y: 0, tX: 0, tY: 0 });
-            
-            // Utilisation d'une ref pour la couleur afin que la boucle d'animation accède toujours à la valeur la plus récente
             const colorRef = useRef(color);
-            useEffect(() => {
-                colorRef.current = color;
-            }, [color]);
 
-            // Conversion Hex à RGB normalisé (0-1)
+            useEffect(() => { colorRef.current = color; }, [color]);
+
             const hexToRgb = (hex) => {
                 const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-                return result ? [
-                    parseInt(result[1], 16) / 255,
-                    parseInt(result[2], 16) / 255,
-                    parseInt(result[3], 16) / 255
-                ] : [0.1, 0.2, 0.8];
+                return result ? [parseInt(result[1], 16)/255, parseInt(result[2], 16)/255, parseInt(result[3], 16)/255] : [0.1, 0.2, 0.8];
             };
 
             const vertexShaderSource = `
@@ -124,155 +137,155 @@
                     noise += pow(noise, 10.);
                     noise = max(.0, noise - .5);
                     noise *= (1. - length(vUv - .5));
-                    
                     vec3 color = u_base_color;
                     color += (u_base_color * 0.5) * sin(3.0 * u_scroll_progress + 1.5);
-                    
-                    color = color * noise;
-                    gl_FragColor = vec4(color, noise);
+                    gl_FragColor = vec4(color * noise, noise);
                 }
             `;
 
-            const createShader = (gl, sourceCode, type) => {
-                const shader = gl.createShader(type);
-                gl.shaderSource(shader, sourceCode);
-                gl.compileShader(shader);
-                if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-                    gl.deleteShader(shader);
-                    return null;
-                }
-                return shader;
-            };
-
-            const createShaderProgram = (gl, vertexShader, fragmentShader) => {
-                const program = gl.createProgram();
-                gl.attachShader(program, vertexShader);
-                gl.attachShader(program, fragmentShader);
-                gl.linkProgram(program);
-                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null;
-                return program;
-            };
-
-            const getUniforms = (gl, program) => {
-                let uniforms = {};
-                let uniformCount = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
-                for (let i = 0; i < uniformCount; i++) {
-                    let uniformName = gl.getActiveUniform(program, i).name;
-                    uniforms[uniformName] = gl.getUniformLocation(program, uniformName);
-                }
-                return uniforms;
-            };
-
-            const initShader = () => {
+            useEffect(() => {
                 const canvas = canvasRef.current;
                 const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-                if (!gl) return null;
-                const vs = createShader(gl, vertexShaderSource, gl.VERTEX_SHADER);
-                const fs = createShader(gl, fragmentShaderSource, gl.FRAGMENT_SHADER);
-                const prog = createShaderProgram(gl, vs, fs);
-                uniformsRef.current = getUniforms(gl, prog);
+                if (!gl) return;
+                glRef.current = gl;
+
+                const createShader = (type, src) => {
+                    const s = gl.createShader(type);
+                    gl.shaderSource(s, src);
+                    gl.compileShader(s);
+                    return s;
+                };
+
+                const program = gl.createProgram();
+                gl.attachShader(program, createShader(gl.VERTEX_SHADER, vertexShaderSource));
+                gl.attachShader(program, createShader(gl.FRAGMENT_SHADER, fragmentShaderSource));
+                gl.linkProgram(program);
+                gl.useProgram(program);
+
+                const uniforms = {};
+                const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
+                for (let i = 0; i < count; i++) {
+                    const info = gl.getActiveUniform(program, i);
+                    uniforms[info.name] = gl.getUniformLocation(program, info.name);
+                }
+                uniformsRef.current = uniforms;
+
                 const vertices = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
-                const vbuf = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, vbuf);
+                const buffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
                 gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-                gl.useProgram(prog);
-                const posLoc = gl.getAttribLocation(prog, 'a_position');
+                const posLoc = gl.getAttribLocation(program, 'a_position');
                 gl.enableVertexAttribArray(posLoc);
                 gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-                return gl;
-            };
 
-            const resizeCanvas = () => {
-                const canvas = canvasRef.current;
-                const gl = glRef.current;
-                if (!canvas || !gl) return;
-                const dpr = Math.min(window.devicePixelRatio, 2);
-                canvas.width = window.innerWidth * dpr;
-                canvas.height = window.innerHeight * dpr;
-                gl.uniform1f(uniformsRef.current.u_ratio, canvas.width / canvas.height);
-                gl.viewport(0, 0, canvas.width, canvas.height);
-            };
+                const resize = () => {
+                    const dpr = Math.min(window.devicePixelRatio, 2);
+                    canvas.width = window.innerWidth * dpr;
+                    canvas.height = window.innerHeight * dpr;
+                    gl.viewport(0, 0, canvas.width, canvas.height);
+                    gl.uniform1f(uniforms.u_ratio, canvas.width / canvas.height);
+                };
+                window.addEventListener('resize', resize);
+                resize();
 
-            const render = () => {
-                const gl = glRef.current;
-                const uniforms = uniformsRef.current;
-                const pointer = pointerRef.current;
-                if (!gl || !uniforms) return;
-                const time = performance.now();
-                
-                // Mettre à jour la position du curseur seulement si le tracking est activé
-                if (mouseTracking) {
-                    pointer.x += (pointer.tX - pointer.x) * 0.2;
-                    pointer.y += (pointer.tY - pointer.y) * 0.2;
-                } else {
-                    pointer.x += (window.innerWidth/2 - pointer.x) * 0.05;
-                    pointer.y += (window.innerHeight/2 - pointer.y) * 0.05;
-                }
-
-                // Couleur dynamique via la ref
-                const rgb = hexToRgb(colorRef.current);
-                gl.uniform3f(uniforms.u_base_color, rgb[0], rgb[1], rgb[2]);
-
-                gl.uniform1f(uniforms.u_time, time);
-                gl.uniform2f(uniforms.u_pointer_position, pointer.x / window.innerWidth, 1 - pointer.y / window.innerHeight);
-                gl.uniform1f(uniforms.u_scroll_progress, window.pageYOffset / (2 * window.innerHeight));
-                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-                animationRef.current = requestAnimationFrame(render);
-            };
-
-            useEffect(() => {
-                glRef.current = initShader();
-                resizeCanvas();
+                const render = () => {
+                    const t = performance.now();
+                    if (mouseTracking) {
+                        pointerRef.current.x += (pointerRef.current.tX - pointerRef.current.x) * 0.2;
+                        pointerRef.current.y += (pointerRef.current.tY - pointerRef.current.y) * 0.2;
+                    } else {
+                        pointerRef.current.x += (window.innerWidth/2 - pointerRef.current.x) * 0.05;
+                        pointerRef.current.y += (window.innerHeight/2 - pointerRef.current.y) * 0.05;
+                    }
+                    
+                    const rgb = hexToRgb(colorRef.current);
+                    gl.uniform3f(uniforms.u_base_color, rgb[0], rgb[1], rgb[2]);
+                    gl.uniform1f(uniforms.u_time, t);
+                    gl.uniform2f(uniforms.u_pointer_position, pointerRef.current.x / window.innerWidth, 1 - pointerRef.current.y / window.innerHeight);
+                    gl.uniform1f(uniforms.u_scroll_progress, window.pageYOffset / (2 * window.innerHeight));
+                    
+                    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                    animationRef.current = requestAnimationFrame(render);
+                };
                 render();
 
-                const updatePos = (x, y) => { 
-                    pointerRef.current.tX = x; 
-                    pointerRef.current.tY = y; 
+                const handleMove = (e) => { 
+                    pointerRef.current.tX = e.clientX || (e.touches && e.touches[0].clientX); 
+                    pointerRef.current.tY = e.clientY || (e.touches && e.touches[0].clientY); 
                 };
-                
-                const hResize = () => resizeCanvas();
-                const hMove = (e) => { if (mouseTracking) updatePos(e.clientX, e.clientY); };
-                const hTouch = (e) => { if (mouseTracking) updatePos(e.touches[0].clientX, e.touches[0].clientY); };
-                const hClick = (e) => { if (mouseTracking) updatePos(e.clientX, e.clientY); };
 
-                window.addEventListener('resize', hResize);
-                window.addEventListener('pointermove', hMove);
-                window.addEventListener('touchmove', hTouch);
-                window.addEventListener('click', hClick);
+                window.addEventListener('pointermove', handleMove);
+                window.addEventListener('touchmove', handleMove);
 
                 return () => {
-                    if (animationRef.current) cancelAnimationFrame(animationRef.current);
-                    window.removeEventListener('resize', hResize);
-                    window.removeEventListener('pointermove', hMove);
-                    window.removeEventListener('touchmove', hTouch);
-                    window.removeEventListener('click', hClick);
+                    cancelAnimationFrame(animationRef.current);
+                    window.removeEventListener('resize', resize);
+                    window.removeEventListener('pointermove', handleMove);
+                    window.removeEventListener('touchmove', handleMove);
                 };
             }, [mouseTracking]);
 
-            return <canvas ref={canvasRef} className="fixed inset-0 w-full h-full pointer-events-none opacity-100 z-0" style={{ backgroundColor: '#000000' }} />;
+            return <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-95 z-0" style={{ backgroundColor: '#000' }} />;
         };
 
-        // --- COMPOSANT APPLICATION ---
+        // --- COMPOSANT MESSAGE AVEC RÉFLEXION ---
+        const MessageContent = ({ content }) => {
+            const thinkingMatch = content.match(/<thinking>([\s\S]*?)<\/thinking>/);
+            const thinking = thinkingMatch ? thinkingMatch[1] : null;
+            const mainContent = content.replace(/<thinking>[\s\S]*?<\/thinking>/, '').trim();
+
+            return (
+                <div className="prose">
+                    {thinking && (
+                        <div className="ai-thought flex flex-col gap-1">
+                            <span className="text-[10px] uppercase tracking-widest font-bold opacity-50 flex items-center gap-2">
+                                <Icon name="brain" size={10} /> Réflexion
+                            </span>
+                            <div dangerouslySetInnerHTML={{ __html: marked.parse(thinking) }} />
+                        </div>
+                    )}
+                    <div dangerouslySetInnerHTML={{ __html: marked.parse(mainContent) }} />
+                </div>
+            );
+        };
+
+        // --- APP ---
         const App = () => {
             const [sessions, setSessions] = useState([{ id: 1, title: 'Nouvelle conversation', messages: [] }]);
             const [activeSessionId, setActiveSessionId] = useState(1);
             const [isSidebarOpen, setIsSidebarOpen] = useState(true);
             const [inputText, setInputText] = useState('');
             const [isLoading, setIsLoading] = useState(false);
-            const [isDarkMode, setIsDarkMode] = useState(true);
+            const [thoughtStepIndex, setThoughtStepIndex] = useState(0);
             const [isRecording, setIsRecording] = useState(false);
+            const [showImageSource, setShowImageSource] = useState(false);
             
-            // Paramètres (Configuration dynamique)
             const [isConfigOpen, setIsConfigOpen] = useState(false);
             const [config, setConfig] = useState(DEFAULT_CONFIG);
             const [glowColor, setGlowColor] = useState("#6366f1");
             const [enableMouseTracking, setEnableMouseTracking] = useState(true);
 
+            const imageInputRef = useRef(null);
+            const cameraInputRef = useRef(null);
+            const messagesEndRef = useRef(null);
             const recognitionRef = useRef(null);
-            const fileInputRef = useRef(null);
 
             const activeSession = sessions.find(s => s.id === activeSessionId) || sessions[0];
             const isHome = activeSession.messages.length === 0;
+
+            useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [activeSession.messages, isLoading]);
+
+            // Gestion des étapes de pensée pendant le chargement
+            useEffect(() => {
+                let interval;
+                if (isLoading) {
+                    setThoughtStepIndex(0);
+                    interval = setInterval(() => {
+                        setThoughtStepIndex(prev => (prev < THOUGHT_STEPS.length - 1 ? prev + 1 : prev));
+                    }, 5000);
+                }
+                return () => clearInterval(interval);
+            }, [isLoading]);
 
             useEffect(() => {
                 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -284,214 +297,201 @@
                 }
             }, []);
 
-            const toggleRecording = () => {
-                if (!recognitionRef.current) return;
-                if (isRecording) { recognitionRef.current.stop(); } 
-                else { recognitionRef.current.start(); setIsRecording(true); }
+            const handleFileUpload = async (files) => {
+                if (!files.length) return;
+                setIsLoading(true);
+                setShowImageSource(false);
+                const fileMsg = { id: Date.now(), role: 'user', content: `Fichier envoyé : ${files[0].name}`, isFile: true };
+                setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, fileMsg] } : s));
+                
+                setTimeout(() => {
+                    setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, { id: Date.now()+1, role: 'assistant', content: "J'ai bien reçu votre image. Que souhaitez-vous que j'en fasse ?" }] } : s));
+                    setIsLoading(false);
+                }, 1500);
             };
 
-            const handleSendMessage = async (textOverride) => {
-                const text = textOverride || inputText;
-                if (!text.trim()) return;
-
-                const userMsg = { id: Date.now(), role: 'user', content: text };
-                setSessions(prev => prev.map(s => s.id === activeSessionId ? {
-                    ...s, 
-                    messages: [...s.messages, userMsg],
-                    title: s.messages.length === 0 ? text.slice(0, 20) : s.title
-                } : s));
-                
+            const handleSendMessage = async () => {
+                if (!inputText.trim()) return;
+                const userMsg = { id: Date.now(), role: 'user', content: inputText };
+                setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, userMsg], title: s.messages.length === 0 ? inputText.slice(0, 20) : s.title } : s));
                 setInputText('');
                 setIsLoading(true);
 
                 try {
-                    const res = await fetch(N8N_WEBHOOK_URL, {
+                    const res = await fetch(N8N_TEXT_WEBHOOK, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: text, sessionId: activeSessionId })
+                        body: JSON.stringify({ message: userMsg.content, sessionId: activeSessionId })
                     });
                     const data = await res.json();
-                    const output = data.output || data.message || data.text || (Array.isArray(data) ? data[0]?.output : "Pas de réponse.");
-                    
-                    setSessions(prev => prev.map(s => s.id === activeSessionId ? {
-                        ...s, 
-                        messages: [...s.messages, { id: Date.now() + 1, role: 'assistant', content: output }]
-                    } : s));
+                    setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, { id: Date.now() + 1, role: 'assistant', content: data.output || data.reply || "Réponse reçue." }] } : s));
                 } catch (e) {
-                    setSessions(prev => prev.map(s => s.id === activeSessionId ? {
-                        ...s, 
-                        messages: [...s.messages, { id: Date.now() + 1, role: 'assistant', content: "Erreur n8n.", isError: true }]
-                    } : s));
-                } finally {
-                    setIsLoading(false);
-                }
+                    setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, { id: Date.now()+1, role: 'assistant', content: "Erreur de connexion.", isError: true }] } : s));
+                } finally { setIsLoading(false); }
             };
 
             return (
-                <div className={`flex h-full transition-colors duration-500 relative ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                    
-                    {/* FOND ANIMÉ GLOBAL */}
+                <div className="flex h-full relative text-white overflow-hidden bg-black">
                     <NeuralGlow color={glowColor} mouseTracking={enableMouseTracking} />
                     
-                    {/* Sidebar */}
-                    <aside className={`${isSidebarOpen ? 'w-64' : 'w-0'} bg-[#050505]/80 backdrop-blur-xl border-r border-white/5 flex flex-col transition-all duration-300 overflow-hidden z-40`}>
-                        <div className="p-4 flex items-center justify-between min-w-[250px]">
-                            <button onClick={() => {
-                                const id = Date.now();
-                                setSessions([{ id, title: 'Nouveau chat', messages: [] }, ...sessions]);
-                                setActiveSessionId(id);
-                            }} className="flex-1 flex items-center gap-2 bg-white/5 hover:bg-white/10 p-2.5 rounded-xl border border-white/5 text-sm">
-                                <Icon name="plus" size={16} /> Nouveau chat
-                            </button>
-                            <button onClick={() => setIsSidebarOpen(false)} className="ml-2 p-2 hover:bg-white/10 rounded-lg opacity-60">
-                                <Icon name="panel-left-close" />
-                            </button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto px-2 space-y-1 custom-scrollbar">
-                            {sessions.map(s => (
-                                <div key={s.id} onClick={() => setActiveSessionId(s.id)} className={`p-3 rounded-xl text-sm cursor-pointer truncate ${activeSessionId === s.id ? 'bg-indigo-600/20 text-indigo-400' : 'hover:bg-white/5 opacity-60'}`}>
-                                    {s.title}
+                    {/* SIDEBAR */}
+                    <aside className={`${isSidebarOpen ? 'w-72' : 'w-0'} transition-all duration-300 bg-black/60 backdrop-blur-xl border-r border-white/10 flex flex-col z-40 overflow-hidden`}>
+                        <div className="w-72 flex flex-col h-full">
+                            <div className="p-4 space-y-4">
+                                <div className="flex justify-between items-center">
+                                    <span className="font-bold text-lg px-2 opacity-80">Menu</span>
+                                    <button onClick={() => setIsSidebarOpen(false)} className="p-2 hover:bg-white/10 rounded-lg"><Icon name="panel-left-close" /></button>
                                 </div>
-                            ))}
-                        </div>
-                        {/* Bouton Paramètres */}
-                        <div className="p-4 border-t border-white/5">
-                            <button onClick={() => setIsConfigOpen(true)} className="flex items-center gap-2 w-full p-2 hover:bg-white/5 rounded-lg text-sm opacity-60 hover:opacity-100 transition-opacity">
-                                <Icon name="settings" size={16} /> Paramètres
-                            </button>
+                                <button onClick={() => {
+                                    const id = Date.now();
+                                    setSessions([{ id, title: 'Nouveau chat', messages: [] }, ...sessions]);
+                                    setActiveSessionId(id);
+                                }} className="w-full flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 p-3 rounded-xl transition-all shadow-lg font-medium">
+                                    <Icon name="plus" size={18} /> Nouveau chat
+                                </button>
+                            </div>
+                            <div className="flex-1 overflow-y-auto px-2 space-y-1 custom-scrollbar">
+                                {sessions.map(s => (
+                                    <div key={s.id} onClick={() => setActiveSessionId(s.id)} className={`p-3 rounded-xl text-sm cursor-pointer truncate flex items-center gap-3 transition-all ${activeSessionId === s.id ? 'bg-white/10 text-white' : 'hover:bg-white/5 text-white/50'}`}>
+                                        <Icon name="message-square" size={14} /> {s.title}
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="p-4 border-t border-white/5">
+                                <button onClick={() => setIsConfigOpen(true)} className="flex items-center gap-2 w-full p-2 hover:bg-white/5 rounded-lg text-sm opacity-60 hover:opacity-100 transition-opacity">
+                                    <Icon name="settings" size={16} /> Paramètres
+                                </button>
+                            </div>
                         </div>
                     </aside>
 
-                    {/* Main Area */}
-                    <main className="flex-1 flex flex-col relative min-w-0 bg-transparent z-10">
-                        <header className="absolute top-0 w-full p-4 flex items-center justify-between z-30">
-                            <div className="flex items-center gap-4">
-                                {!isSidebarOpen && <button onClick={() => setIsSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg backdrop-blur-md"><Icon name="panel-left" /></button>}
-                                <h1 className="font-bold text-xl tracking-tight drop-shadow-lg">{config.companyName}</h1>
-                            </div>
+                    {/* MAIN */}
+                    <main className="flex-1 flex flex-col relative z-10 h-full">
+                        <header className="absolute top-0 w-full p-4 flex items-center gap-4 z-30">
+                            {!isSidebarOpen && <button onClick={() => setIsSidebarOpen(true)} className="p-2 bg-black/40 rounded-lg backdrop-blur-md border border-white/10"><Icon name="panel-left" /></button>}
+                            <h1 className="font-bold text-xl drop-shadow-md">{config.companyName}</h1>
                         </header>
 
-                        <div className="flex-1 overflow-y-auto custom-scrollbar relative">
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 relative">
                             {isHome ? (
-                                <div className="h-full flex flex-col items-center justify-center p-6 text-center">
-                                    <div className="relative z-10 space-y-8 animate-fadeIn w-full max-w-2xl px-4">
-                                        <div className="inline-flex p-4 rounded-3xl bg-indigo-500/10 border border-indigo-500/20 shadow-2xl backdrop-blur-md mb-4">
-                                            <Icon name="sparkles" size={40} className="text-indigo-400" />
-                                        </div>
-                                        <h2 className="text-5xl font-bold leading-tight drop-shadow-xl mb-12">Comment puis-je <br/><span className="text-white/40">vous aider ?</span></h2>
-                                        
-                                        <div className="w-full">
-                                            <div className="bg-[#1a1a1a]/95 backdrop-blur-3xl border border-white/10 p-2.5 rounded-[32px] flex items-center gap-2 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
-                                                <input 
-                                                    className="flex-1 bg-transparent border-none outline-none py-4 px-6 text-lg text-white placeholder-white/30"
-                                                    placeholder="Une idée ? Une question ?"
-                                                    value={inputText}
-                                                    onChange={e => setInputText(e.target.value)}
-                                                    onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
-                                                />
-                                                <button 
-                                                    onClick={() => handleSendMessage()} 
-                                                    className="bg-[#e4e4e7] hover:bg-white text-black h-12 w-12 rounded-full flex items-center justify-center transition-all shadow-lg shrink-0 mr-1"
-                                                >
-                                                    <Icon name="arrow-right" size={20} className="stroke-[1.5]" />
-                                                </button>
-                                            </div>
-                                        </div>
+                                <div className="h-full flex flex-col items-center justify-center text-center animate-fadeIn">
+                                    <div className="p-6 rounded-full bg-black/40 border border-white/10 backdrop-blur-2xl mb-8 shadow-2xl">
+                                        <Icon name="sparkles" size={48} className="text-indigo-400" />
                                     </div>
+                                    <h2 className="text-5xl font-bold mb-12">Comment puis-je <br/><span className="text-indigo-400 font-black">vous aider ?</span></h2>
                                 </div>
                             ) : (
-                                <div className="max-w-3xl mx-auto py-24 px-4 space-y-10 relative z-10">
+                                <div className="max-w-3xl mx-auto py-20 space-y-6">
                                     {activeSession.messages.map(m => (
-                                        <div key={m.id} className={`flex gap-5 animate-fadeIn relative z-20 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-lg ${m.role === 'user' ? 'bg-zinc-700' : (m.isError ? 'bg-red-500' : 'bg-indigo-600')}`}>
+                                        <div key={m.id} className={`flex gap-4 animate-fadeIn ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${m.role === 'user' ? 'bg-indigo-600' : 'bg-black/60 border border-white/10'}`}>
                                                 <Icon name={m.role === 'user' ? 'user' : 'bot'} size={18} />
                                             </div>
-                                            <div className={`p-4 rounded-2xl max-w-[85%] shadow-xl backdrop-blur-md ${m.role === 'user' ? 'bg-zinc-800/80' : (m.isError ? 'bg-red-500/10 border border-red-500/20 text-red-400' : 'bg-white/5 border border-white/5')}`}>
-                                                {m.content}
+                                            <div className={`p-4 rounded-2xl max-w-[85%] backdrop-blur-xl border border-white/10 ${m.role === 'user' ? 'bg-indigo-600/60' : 'bg-black/40'}`}>
+                                                <MessageContent content={m.content} />
                                             </div>
                                         </div>
                                     ))}
-                                    {isLoading && <div className="flex items-center gap-2 text-indigo-400 animate-pulse text-sm relative z-20"><Icon name="loader-2" className="animate-spin" size={16}/> Nexus analyse...</div>}
+                                    
+                                    {/* CHARGEMENT DYNAMIQUE AVEC PHRASES DE RÉFLEXION */}
+                                    {isLoading && (
+                                        <div className="flex gap-4 animate-fadeIn">
+                                            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-black/60 border border-white/10">
+                                                <Icon name="bot" size={18} className="animate-pulse" />
+                                            </div>
+                                            <div className="flex flex-col gap-2 py-2">
+                                                <div className="flex items-center gap-3 text-white/40 text-sm animate-pulse-soft">
+                                                    <Icon name="loader-2" size={14} className="animate-spin" />
+                                                    <span className="transition-all duration-1000">
+                                                        {THOUGHT_STEPS[thoughtStepIndex]}...
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div ref={messagesEndRef} />
                                 </div>
                             )}
                         </div>
 
-                        {!isHome && (
-                            <footer className="p-6 relative z-30">
-                                <div className="max-w-3xl mx-auto flex items-end gap-2 bg-zinc-900/80 backdrop-blur-xl border border-white/10 p-2 rounded-3xl shadow-2xl">
-                                    <button onClick={() => fileInputRef.current.click()} className="p-3 text-white/30 hover:text-white"><Icon name="plus" /></button>
+                        {/* INPUT BAR */}
+                        <div className="p-4 pb-8 relative z-30">
+                            <div className="max-w-3xl mx-auto">
+                                <div className="bg-black/60 backdrop-blur-3xl border border-white/10 p-2 rounded-[32px] flex items-end gap-2 shadow-2xl transition-all focus-within:border-indigo-500/50">
+                                    <div className="relative">
+                                        <button 
+                                            onClick={() => setShowImageSource(!showImageSource)} 
+                                            className={`p-3 rounded-full transition-colors ${showImageSource ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white'}`}
+                                        >
+                                            <Icon name="camera" />
+                                        </button>
+                                        
+                                        {showImageSource && (
+                                            <div className="absolute bottom-full left-0 mb-4 bg-[#121212] border border-white/10 rounded-2xl p-2 w-52 shadow-2xl animate-fadeIn">
+                                                <button onClick={() => cameraInputRef.current.click()} className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl text-sm transition-colors">
+                                                    <Icon name="camera" size={16} /> Prendre une photo
+                                                </button>
+                                                <button onClick={() => imageInputRef.current.click()} className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl text-sm transition-colors">
+                                                    <Icon name="image" size={16} /> Choisir une image
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+
                                     <textarea 
-                                        className="flex-1 bg-transparent outline-none py-3 px-2 text-white placeholder-white/20 resize-none max-h-40"
-                                        placeholder="Message..."
+                                        className="flex-1 bg-transparent border-none outline-none py-3 px-2 text-white placeholder-white/20 resize-none max-h-32"
+                                        placeholder="Posez votre question..."
                                         rows={1}
                                         value={inputText}
                                         onChange={e => setInputText(e.target.value)}
                                         onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
                                     />
-                                    <button onClick={toggleRecording} className={`p-3 rounded-full transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-white/30 hover:text-white'}`}><Icon name="mic" /></button>
-                                    <button onClick={() => handleSendMessage()} className="p-3 bg-white text-black rounded-xl hover:bg-zinc-200"><Icon name="arrow-right" /></button>
+                                    
+                                    <button 
+                                        onClick={() => { if(!isRecording) { recognitionRef.current?.start(); setIsRecording(true); } else { recognitionRef.current?.stop(); } }}
+                                        className={`p-3 rounded-full ${isRecording ? 'text-red-500 animate-pulse' : 'text-white/40 hover:text-white'}`}
+                                    >
+                                        <Icon name="mic" />
+                                    </button>
+                                    
+                                    <button onClick={handleSendMessage} className="bg-white text-black h-10 w-10 rounded-full flex items-center justify-center hover:scale-105 transition-transform shrink-0">
+                                        <Icon name="arrow-up" size={20} />
+                                    </button>
                                 </div>
-                                <input type="file" ref={fileInputRef} className="hidden" />
-                            </footer>
-                        )}
+                            </div>
+                        </div>
+
+                        <input type="file" ref={imageInputRef} className="hidden" accept="image/*" onChange={e => handleFileUpload(e.target.files)} />
+                        <input type="file" ref={cameraInputRef} className="hidden" accept="image/*" capture="environment" onChange={e => handleFileUpload(e.target.files)} />
                     </main>
 
-                    {/* MODAL PARAMÈTRES */}
+                    {/* CONFIG MODAL */}
                     {isConfigOpen && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setIsConfigOpen(false)}>
-                            <div className="bg-[#121212] border border-white/10 p-6 rounded-2xl w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
-                                <div className="flex justify-between items-center mb-6">
-                                    <h3 className="text-lg font-bold">Paramètres</h3>
-                                    <button onClick={() => setIsConfigOpen(false)}><Icon name="x" size={20} className="opacity-60 hover:opacity-100" /></button>
-                                </div>
-                                
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setIsConfigOpen(false)}>
+                            <div className="bg-[#121212] border border-white/10 p-6 rounded-3xl w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
+                                <h3 className="text-lg font-bold mb-6">Personnalisation</h3>
                                 <div className="space-y-6">
-                                    {/* Option Nom Entreprise */}
                                     <div>
-                                        <label className="block text-sm font-medium mb-2 opacity-80">Nom de l'interface</label>
-                                        <input 
-                                            type="text" 
-                                            value={config.companyName}
-                                            onChange={(e) => setConfig({...config, companyName: e.target.value})}
-                                            className="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-sm focus:border-indigo-500 outline-none"
-                                        />
-                                    </div>
-
-                                    {/* Option Couleur */}
-                                    <div>
-                                        <label className="block text-sm font-medium mb-2 opacity-80">Couleur du fond</label>
+                                        <label className="block text-xs font-bold uppercase opacity-40 mb-2">Couleur du Glow</label>
                                         <div className="flex items-center gap-3">
-                                            <input 
-                                                type="color" 
-                                                value={glowColor}
-                                                onChange={(e) => setGlowColor(e.target.value)}
-                                                className="w-10 h-10 rounded-lg cursor-pointer bg-transparent border border-white/20"
-                                            />
-                                            <span className="text-sm opacity-60 font-mono">{glowColor}</span>
+                                            <input type="color" value={glowColor} onChange={e => setGlowColor(e.target.value)} className="w-10 h-10 rounded-xl bg-transparent border border-white/10 cursor-pointer"/>
+                                            <span className="font-mono text-sm opacity-60">{glowColor}</span>
                                         </div>
                                     </div>
-
-                                    {/* Option Suivi Souris */}
-                                    <div>
-                                        <label className="flex items-center justify-between cursor-pointer">
-                                            <span className="text-sm font-medium opacity-80">Suivi de la souris</span>
-                                            <div 
-                                                className={`w-12 h-6 rounded-full p-1 transition-colors ${enableMouseTracking ? 'bg-indigo-600' : 'bg-zinc-700'}`}
-                                                onClick={() => setEnableMouseTracking(!enableMouseTracking)}
-                                            >
-                                                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${enableMouseTracking ? 'translate-x-6' : 'translate-x-0'}`}></div>
-                                            </div>
-                                        </label>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-sm font-medium opacity-80">Suivi Souris</span>
+                                        <button 
+                                            onClick={() => setEnableMouseTracking(!enableMouseTracking)}
+                                            className={`w-12 h-6 rounded-full relative transition-colors ${enableMouseTracking ? 'bg-indigo-600' : 'bg-white/10'}`}
+                                        >
+                                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${enableMouseTracking ? 'right-1' : 'left-1'}`} />
+                                        </button>
                                     </div>
                                 </div>
-
-                                <button onClick={() => setIsConfigOpen(false)} className="w-full mt-8 py-3 bg-white text-black rounded-xl font-bold hover:bg-zinc-200 transition-colors">
-                                    Fermer
-                                </button>
+                                <button onClick={() => setIsConfigOpen(false)} className="w-full mt-8 py-3 bg-white text-black rounded-xl font-bold">Enregistrer</button>
                             </div>
                         </div>
                     )}
-
                 </div>
             );
         };
